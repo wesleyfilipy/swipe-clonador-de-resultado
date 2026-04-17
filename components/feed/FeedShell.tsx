@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { useBrowserSupabase } from "@/components/supabase/BrowserSupabaseProvider";
 import type { AdRow, SortMode } from "@/types/database";
 import { FREE_AD_LIMIT } from "@/lib/constants";
 import { AdSlide } from "./AdSlide";
@@ -15,7 +15,7 @@ type Props = {
 };
 
 export function FeedShell({ email, initialSubscriber }: Props) {
-  const supabase = createClient();
+  const { supabase, error: configError, ready } = useBrowserSupabase();
   const scrollRef = useRef<HTMLDivElement>(null);
   const offsetRef = useRef(0);
   const [ads, setAds] = useState<AdRow[]>([]);
@@ -112,7 +112,7 @@ export function FeedShell({ email, initialSubscriber }: Props) {
   }
 
   async function logout() {
-    await supabase.auth.signOut();
+    if (supabase) await supabase.auth.signOut();
     window.location.href = "/";
   }
 
@@ -150,6 +150,21 @@ export function FeedShell({ email, initialSubscriber }: Props) {
       ) : null,
     [subscriber]
   );
+
+  if (!ready) {
+    return (
+      <div className="h-dvh flex items-center justify-center text-sm text-zinc-400">Conectando ao Supabase…</div>
+    );
+  }
+
+  if (configError || !supabase) {
+    return (
+      <div className="h-dvh flex flex-col items-center justify-center gap-3 px-6 text-center text-sm text-amber-200">
+        <p>{configError ?? "Cliente Supabase indisponível."}</p>
+        <p className="text-zinc-500 text-xs">Confira .env.local ou variáveis no painel de deploy.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="h-dvh flex flex-col bg-surface-950 text-zinc-100">

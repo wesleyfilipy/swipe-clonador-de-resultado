@@ -13,7 +13,7 @@ export function getSupabasePublicEnv() {
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (url && anonKey) return { url, anonKey };
 
-  if (!warnedMissingPublicEnv) {
+  if (!warnedMissingPublicEnv && typeof window !== "undefined") {
     warnedMissingPublicEnv = true;
     console.warn(
       "[Supabase] NEXT_PUBLIC_SUPABASE_URL ou NEXT_PUBLIC_SUPABASE_ANON_KEY ausentes. " +
