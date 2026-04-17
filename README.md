@@ -1,0 +1,1 @@
+# swipe-clonador-de-resultado
