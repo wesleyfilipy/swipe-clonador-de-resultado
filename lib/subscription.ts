@@ -2,6 +2,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 const ACTIVE = new Set(["active", "trialing"]);
 
+/** Modo construção: feed ilimitado sem Stripe (Vercel: defina FREE_FEED_UNLIMITED=1). */
+export function freeFeedUnlimitedEnv(): boolean {
+  const v = process.env.FREE_FEED_UNLIMITED ?? process.env.NEXT_PUBLIC_FREE_FEED_UNLIMITED;
+  return v === "1" || String(v).toLowerCase() === "true";
+}
+
 export async function isSubscriber(
   supabase: SupabaseClient,
   userId: string

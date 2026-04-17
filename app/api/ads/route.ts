@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { isSubscriber } from "@/lib/subscription";
+import { freeFeedUnlimitedEnv, isSubscriber } from "@/lib/subscription";
 import { FREE_AD_LIMIT } from "@/lib/constants";
 import type { SortMode } from "@/types/database";
 
@@ -19,7 +19,10 @@ export async function GET(req: Request) {
   const offset = Number(searchParams.get("offset") ?? "0");
   const pageSize = Math.min(Number(searchParams.get("limit") ?? "8"), 20);
 
-  const subscriber = await isSubscriber(supabase, user.id);
+  const paid = await isSubscriber(supabase, user.id);
+  const buildFree = freeFeedUnlimitedEnv();
+  /** Em modo construção (`FREE_FEED_UNLIMITED`) o feed não limita scroll nem exige Stripe. */
+  const subscriber = paid || buildFree;
   const maxTotal = subscriber ? 10_000 : FREE_AD_LIMIT;
 
   let q = supabase.from("ads").select("*", { count: "exact" });
@@ -28,13 +31,15 @@ export async function GET(req: Request) {
     q = q.eq("niche", niche);
   }
 
+  /* "scaled": prioriza volume + tempo ativo. Coluna score (migration_bot_ads) é opcional no ORDER BY
+     para não quebrar projetos que só rodaram schema.sql (sem score). */
   if (sort === "scaled") {
-    q = q
-      .order("score", { ascending: false, nullsFirst: false })
-      .order("views_week", { ascending: false });
+    q = q.order("views_week", { ascending: false }).order("active_days", { ascending: false });
+  } else if (sort === "recent") {
+    q = q.order("created_at", { ascending: false });
+  } else {
+    q = q.order("active_days", { ascending: false });
   }
-  else if (sort === "recent") q = q.order("created_at", { ascending: false });
-  else q = q.order("active_days", { ascending: false });
 
   const from = offset;
   const to = Math.min(offset + pageSize - 1, maxTotal - 1);

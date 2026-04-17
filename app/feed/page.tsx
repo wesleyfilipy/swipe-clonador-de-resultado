@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { isSubscriber } from "@/lib/subscription";
+import { freeFeedUnlimitedEnv, isSubscriber } from "@/lib/subscription";
 import { FeedShell } from "@/components/feed/FeedShell";
 
 export default async function FeedPage() {
@@ -10,7 +10,8 @@ export default async function FeedPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const subscriber = await isSubscriber(supabase, user.id);
+  const paid = await isSubscriber(supabase, user.id);
+  const subscriber = paid || freeFeedUnlimitedEnv();
 
   return <FeedShell email={user.email ?? ""} initialSubscriber={subscriber} />;
 }

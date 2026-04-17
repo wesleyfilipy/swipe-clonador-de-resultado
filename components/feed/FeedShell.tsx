@@ -28,6 +28,7 @@ export function FeedShell({ email, initialSubscriber }: Props) {
   const [vslLayout, setVslLayout] = useState<"split" | "modal">("split");
   const [active, setActive] = useState(0);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [loadError, setLoadError] = useState<string | null>(null);
   const lastHistory = useRef<string | null>(null);
 
   const fetchPage = useCallback(async (reset: boolean) => {
@@ -49,7 +50,11 @@ export function FeedShell({ email, initialSubscriber }: Props) {
     if (reset) setLoading(false);
     else setLoadingMore(false);
 
-    if (!res.ok) return;
+    if (!res.ok) {
+      setLoadError(typeof json.error === "string" ? json.error : "Erro ao carregar anúncios.");
+      return;
+    }
+    setLoadError(null);
 
     setSubscriber(Boolean(json.subscriber));
     setHasMore(Boolean(json.hasMore));
@@ -160,7 +165,7 @@ export function FeedShell({ email, initialSubscriber }: Props) {
   if (configError || !supabase) {
     return (
       <div className="h-dvh flex flex-col items-center justify-center gap-3 px-6 text-center text-sm text-amber-200">
-        <p>{configError ?? "Cliente Supabase indisponível."}</p>
+        <p className="whitespace-pre-line">{configError ?? "Cliente Supabase indisponível."}</p>
         <p className="text-zinc-500 text-xs">Confira .env.local ou variáveis no painel de deploy.</p>
       </div>
     );
@@ -247,9 +252,27 @@ export function FeedShell({ email, initialSubscriber }: Props) {
         {(loading || loadingMore) && (
           <div className="h-20 flex items-center justify-center text-xs text-zinc-500">Carregando…</div>
         )}
-        {!loading && ads.length === 0 && (
-          <div className="h-[50dvh] flex items-center justify-center text-sm text-zinc-500 px-6 text-center">
-            Nenhum anúncio. Rode o SQL em `supabase/schema.sql`, depois `npm run seed` ou a mineração Meta.
+        {loadError && (
+          <div className="h-32 flex items-center justify-center text-sm text-red-400 px-6 text-center">
+            {loadError}
+          </div>
+        )}
+        {!loading && !loadError && ads.length === 0 && (
+          <div className="h-[50dvh] flex flex-col items-center justify-center gap-3 text-sm text-zinc-400 px-6 text-center max-w-sm mx-auto">
+            <p className="font-medium text-zinc-300">Nenhum anúncio na sua base ainda</p>
+            <p className="text-xs leading-relaxed text-zinc-500">
+              O feed mostra o que está na tabela <code className="text-zinc-400">ads</code> do Supabase. A mineração automática da{" "}
+              <strong className="text-zinc-400">Meta Ad Library</strong> roda no servidor (cron{" "}
+              <code className="text-zinc-400">/api/cron/mine-ad-library</code>) quando você configura{" "}
+              <code className="text-zinc-400">CRON_SECRET</code>, token Meta e SQL <code className="text-zinc-400">migration_mine_source.sql</code>.
+            </p>
+            <ol className="text-left text-xs text-zinc-500 list-decimal list-inside space-y-1 w-full">
+              <li>Supabase: <code className="text-zinc-400">schema.sql</code> + <code className="text-zinc-400">migration_mine_source.sql</code>.</li>
+              <li>Vercel: cron diário em <code className="text-zinc-400">/api/cron/mine-ad-library</code> — variáveis <code className="text-zinc-400">META_AD_LIBRARY_ACCESS_TOKEN</code>, <code className="text-zinc-400">CRON_SECRET</code>, Supabase service role + URL.</li>
+              <li>Teste após deploy: <code className="text-zinc-400">/api/cron/mine-ad-library?secret=SEU_CRON_SECRET</code>.</li>
+              <li>Se a API Meta não liberar: rode o bot <code className="text-zinc-400">bot/</code> (<code className="text-zinc-400">npm run scrape</code>) num PC/VPS agendado; grava no mesmo Supabase.</li>
+              <li>Ou <code className="text-zinc-400">npm run seed</code> para dados de exemplo.</li>
+            </ol>
           </div>
         )}
       </div>

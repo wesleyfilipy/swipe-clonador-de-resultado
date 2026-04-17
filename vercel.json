@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/mine-ad-library",
+      "schedule": "0 7 * * *"
+    }
+  ]
+}

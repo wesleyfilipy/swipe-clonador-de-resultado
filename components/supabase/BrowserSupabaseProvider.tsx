@@ -33,11 +33,18 @@ export function BrowserSupabaseProvider({ children }: { children: React.ReactNod
       }
 
       const res = await fetch("/api/supabase-public", { cache: "no-store" });
-      const j = (await res.json()) as { url?: string; anonKey?: string; message?: string };
+      let j: { url?: string; anonKey?: string; message?: string; hints?: string[] };
+      try {
+        j = (await res.json()) as typeof j;
+      } catch {
+        j = { message: "Resposta inválida de /api/supabase-public." };
+      }
       if (cancelled) return;
       if (!res.ok || !j.url || !j.anonKey) {
         setSupabase(null);
-        setError(j.message ?? "Supabase não configurado no servidor.");
+        const hintBlock =
+          j.hints && j.hints.length > 0 ? "\n\n" + j.hints.map((h, i) => `${i + 1}. ${h}`).join("\n") : "";
+        setError((j.message ?? "Supabase não configurado no servidor.") + hintBlock);
         setReady(true);
         return;
       }

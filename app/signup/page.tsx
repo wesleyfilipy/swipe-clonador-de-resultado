@@ -14,6 +14,30 @@ export default function SignupPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  function mapSignupError(err: { message?: string; status?: number }) {
+    const m = (err.message ?? "").toLowerCase();
+    if (err.status === 429 || m.includes("rate limit")) {
+      return (
+        "Limite de e-mails do Supabase atingido (proteção anti-spam). Tente de novo daqui a alguns minutos ou daqui a 1 hora.\n\n" +
+        "Dicas: evite clicar várias vezes em Cadastrar; em desenvolvimento desative “Confirm email” em Authentication → Providers → Email; " +
+        "ou use outro e-mail para teste."
+      );
+    }
+    if (m.includes("already registered") || m.includes("user already")) {
+      return "Este e-mail já está cadastrado. Use Entrar ou recuperação de senha no Supabase.";
+    }
+    if (m.includes("signups not allowed")) {
+      return (
+        "Novos cadastros estão desligados neste projeto Supabase.\n\n" +
+        "No painel do projeto: Project Settings (ícone de engrenagem) → Authentication → " +
+        "ative “Allow new users to sign up” / permitir novos usuários, e salve.\n\n" +
+        "Depois confira Authentication → Providers → Email (provedor ligado). " +
+        "Se o projeto estiver pausado no plano free, reative-o."
+      );
+    }
+    return err.message ?? "Não foi possível cadastrar.";
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!supabase) {
@@ -32,7 +56,7 @@ export default function SignupPage() {
     });
     setLoading(false);
     if (err) {
-      setError(err.message);
+      setError(mapSignupError(err));
       return;
     }
     if (data.user && !data.session) {
@@ -53,7 +77,7 @@ export default function SignupPage() {
           <p className="text-sm text-zinc-400 mt-1">Plano mensal R$20 para feed ilimitado.</p>
         </div>
         {configError && (
-          <p className="text-sm text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+          <p className="text-sm text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2 whitespace-pre-line">
             {configError}
           </p>
         )}
@@ -79,7 +103,7 @@ export default function SignupPage() {
               className="mt-1 w-full rounded-lg border border-zinc-700 bg-surface-950 px-3 py-2 text-sm outline-none focus:border-indigo-500"
             />
           </div>
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-red-400 whitespace-pre-line leading-relaxed">{error}</p>}
           {success && (
             <p className="text-sm text-emerald-400 leading-relaxed border border-emerald-500/30 rounded-lg px-3 py-2 bg-emerald-500/5">
               {success}

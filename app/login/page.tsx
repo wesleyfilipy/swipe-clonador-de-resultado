@@ -79,7 +79,7 @@ export default function LoginPage() {
           <p className="text-sm text-zinc-400 mt-1">Acesse o feed completo com assinatura ativa.</p>
         </div>
         {configError && (
-          <p className="text-sm text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+          <p className="text-sm text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2 whitespace-pre-line">
             {configError}
           </p>
         )}
