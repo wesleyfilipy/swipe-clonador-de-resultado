@@ -29,7 +29,12 @@ export function FeedShell({ email, initialSubscriber }: Props) {
   const [active, setActive] = useState(0);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [siteOrigin, setSiteOrigin] = useState("");
   const lastHistory = useRef<string | null>(null);
+
+  useEffect(() => {
+    setSiteOrigin(typeof window !== "undefined" ? window.location.origin : "");
+  }, []);
 
   const fetchPage = useCallback(async (reset: boolean) => {
     if (reset) {
@@ -259,19 +264,33 @@ export function FeedShell({ email, initialSubscriber }: Props) {
         )}
         {!loading && !loadError && ads.length === 0 && (
           <div className="h-[50dvh] flex flex-col items-center justify-center gap-3 text-sm text-zinc-400 px-6 text-center max-w-sm mx-auto">
-            <p className="font-medium text-zinc-300">Nenhum anúncio na sua base ainda</p>
+            <p className="font-medium text-zinc-300">Nenhum anúncio na base ainda</p>
             <p className="text-xs leading-relaxed text-zinc-500">
-              O feed mostra o que está na tabela <code className="text-zinc-400">ads</code> do Supabase. A mineração automática da{" "}
-              <strong className="text-zinc-400">Meta Ad Library</strong> roda no servidor (cron{" "}
-              <code className="text-zinc-400">/api/cron/mine-ad-library</code>) quando você configura{" "}
-              <code className="text-zinc-400">CRON_SECRET</code>, token Meta e SQL <code className="text-zinc-400">migration_mine_source.sql</code>.
+              Esta página <strong className="text-zinc-400">não</strong> abre a Biblioteca no navegador. Ela só lista o que já está na tabela{" "}
+              <code className="text-zinc-400">ads</code> do Supabase. Quem busca na Meta é a rota{" "}
+              <code className="text-zinc-400">/api/cron/mine-ad-library</code> no servidor (Vercel).
             </p>
+            <p className="text-xs leading-relaxed text-amber-200/90">
+              O agendamento da Vercel roda <strong>no máximo 1 vez por dia</strong>. Se você acabou de publicar, a base pode continuar vazia até esse horário — ou dispare a primeira carga você mesmo (passo abaixo).
+            </p>
+            {siteOrigin ? (
+              <div className="w-full rounded-lg border border-zinc-700 bg-zinc-900/50 p-2 text-left">
+                <p className="text-[10px] uppercase tracking-wide text-zinc-500 mb-1">Primeira carga (abra numa nova aba)</p>
+                <code className="text-[10px] text-indigo-200 break-all block select-all">
+                  {siteOrigin}/api/cron/mine-ad-library?secret=COLOQUE_AQUI_SEU_CRON_SECRET
+                </code>
+                <p className="text-[10px] text-zinc-500 mt-2">
+                  Troque <span className="text-zinc-400">COLOQUE_AQUI_SEU_CRON_SECRET</span> pelo valor de <code className="text-zinc-400">CRON_SECRET</code> nas variáveis da Vercel. Resposta JSON:{" "}
+                  <code className="text-zinc-400">inserted</code> &gt; 0 = ok. <code className="text-zinc-400">missing_token</code> = falta{" "}
+                  <code className="text-zinc-400">META_AD_LIBRARY_ACCESS_TOKEN</code>. Erro OAuth = app/token Meta ainda sem acesso à Ad Library.
+                </p>
+              </div>
+            ) : null}
             <ol className="text-left text-xs text-zinc-500 list-decimal list-inside space-y-1 w-full">
-              <li>Supabase: <code className="text-zinc-400">schema.sql</code> + <code className="text-zinc-400">migration_mine_source.sql</code>.</li>
-              <li>Vercel: cron diário em <code className="text-zinc-400">/api/cron/mine-ad-library</code> — variáveis <code className="text-zinc-400">META_AD_LIBRARY_ACCESS_TOKEN</code>, <code className="text-zinc-400">CRON_SECRET</code>, Supabase service role + URL.</li>
-              <li>Teste após deploy: <code className="text-zinc-400">/api/cron/mine-ad-library?secret=SEU_CRON_SECRET</code>.</li>
-              <li>Se a API Meta não liberar: rode o bot <code className="text-zinc-400">bot/</code> (<code className="text-zinc-400">npm run scrape</code>) num PC/VPS agendado; grava no mesmo Supabase.</li>
-              <li>Ou <code className="text-zinc-400">npm run seed</code> para dados de exemplo.</li>
+              <li>Supabase SQL Editor: <code className="text-zinc-400">migration_mine_source.sql</code> (coluna <code className="text-zinc-400">mine_source</code>).</li>
+              <li>Vercel → Environment: <code className="text-zinc-400">CRON_SECRET</code>, <code className="text-zinc-400">META_AD_LIBRARY_ACCESS_TOKEN</code>, <code className="text-zinc-400">SUPABASE_SERVICE_ROLE_KEY</code>, URL Supabase.</li>
+              <li>Sem API Meta liberada: <code className="text-zinc-400">bot/</code> com <code className="text-zinc-400">npm run scrape</code> num PC/VPS no mesmo Supabase.</li>
+              <li>Só para testar o feed: no PC, com as mesmas chaves, <code className="text-zinc-400">npm run seed</code>.</li>
             </ol>
           </div>
         )}
