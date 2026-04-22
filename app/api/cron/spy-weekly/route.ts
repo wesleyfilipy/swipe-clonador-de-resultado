@@ -4,7 +4,7 @@ import { runWeeklySpyIngest } from "@/lib/spy/weekly-ingest";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export const maxDuration = 800;
+export const maxDuration = 300;
 
 /**
  * Ingestão semanal (única rotina que chama o Apify para o catálogo spy).

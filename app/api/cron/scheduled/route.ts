@@ -5,8 +5,8 @@ import { runWeeklySpyIngest } from "@/lib/spy/weekly-ingest";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-/** Mineração + Apify spy: precisa de plano com timeout alto (Pro) se o spy rodar na mesma request. */
-export const maxDuration = 800;
+/** Hobby: max 300s. Pro pode usar até 800s+ nos routes se precisar de mineração/spy muito longa. */
+export const maxDuration = 300;
 
 /**
  * Único job agendável no Vercel Hobby (1 cron por projeto).
