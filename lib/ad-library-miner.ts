@@ -90,18 +90,44 @@ function extractBodies(raw: Record<string, unknown>): string {
 
 export function extractVideoUrl(raw: Record<string, unknown>): string | null {
   const v = raw.ad_creative_videos;
-  if (Array.isArray(v) && v.length > 0 && typeof v[0] === "object" && v[0]) {
-    const o = v[0] as Record<string, unknown>;
-    for (const k of ["video_sd_url", "video_hd_url", "video_url", "url"]) {
+  if (Array.isArray(v) && v.length > 0) {
+    for (const el of v) {
+      if (typeof el === "string" && /^https?:\/\//i.test(el) && isLikelyCreativeVideoString(el)) {
+        return el;
+      }
+      if (el && typeof el === "object") {
+        const o = el as Record<string, unknown>;
+        for (const k of ["video_sd_url", "video_hd_url", "video_url", "url", "source"]) {
+          const u = o[k];
+          if (typeof u === "string" && /^https?:\/\//i.test(u) && isLikelyCreativeVideoString(u)) {
+            return u;
+          }
+        }
+      }
+    }
+  } else if (v && typeof v === "object" && !Array.isArray(v)) {
+    const o = v as Record<string, unknown>;
+    for (const k of ["video_sd_url", "video_hd_url", "video_url", "url", "source"]) {
       const u = o[k];
-      if (typeof u === "string" && /^https?:\/\//i.test(u)) return u;
+      if (typeof u === "string" && /^https?:\/\//i.test(u) && isLikelyCreativeVideoString(u)) {
+        return u;
+      }
     }
   }
   const link = raw.ad_creative_link_urls;
   if (Array.isArray(link) && typeof link[0] === "string" && /^https?:\/\//i.test(link[0])) {
-    return link[0];
+    if (isLikelyCreativeVideoString(link[0])) return link[0];
   }
   return null;
+}
+
+function isLikelyCreativeVideoString(u: string): boolean {
+  const s = u.toLowerCase();
+  if (/search_type=keyword|\/ads\/library\?.*&q=/i.test(s)) return false;
+  if (/\.(jpe?g|png|gif|webp|svg)(\?|$)/i.test(s)) return false;
+  return Boolean(
+    /video|mp4|m3u8|playable|fbcdn|fbsbx|facebook\.com\/.*video|\.mp4|\.m3u8|\.mov|\.webm/i.test(s)
+  );
 }
 
 export function mapRow(raw: Record<string, unknown>, countryCode: string | null): MinedAdLibraryRow | null {

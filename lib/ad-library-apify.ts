@@ -61,9 +61,25 @@ function firstNonSearchLanding(...cands: unknown[]): string | null {
   return null;
 }
 
-/** Página de detalhe de um anúncio na Ad Library (útil para Apify / “atualizar vídeo”). */
-export function adLibraryIdUrl(adArchiveId: string): string {
-  return `https://www.facebook.com/ads/library/?id=${encodeURIComponent(adArchiveId)}`;
+/**
+ * Página de detalhe de um anúncio na Ad Library (Apify, links “ver na biblioteca”).
+ * Com `country` e `mediaType`, a Meta mostra a mesma UI que na mineração por keyword.
+ */
+export function adLibraryIdUrl(
+  adArchiveId: string,
+  opts?: { country?: string; mediaType?: "video" | "all" }
+): string {
+  const u = new URL("https://www.facebook.com/ads/library/");
+  u.searchParams.set("id", adArchiveId.trim());
+  u.searchParams.set("active_status", "all");
+  u.searchParams.set("ad_type", "all");
+  if (opts?.country) {
+    u.searchParams.set("country", opts.country.replace(/\s/g, "").toUpperCase());
+  }
+  if (opts?.mediaType) {
+    u.searchParams.set("media_type", opts.mediaType);
+  }
+  return u.toString();
 }
 
 export function getApifyAdLibraryTokenFromEnv(): string {
@@ -409,6 +425,20 @@ function isLikelyVideoCdnUrl(s: string): boolean {
   );
 }
 
+/** Vídeos fora de fbcdn (Instagram/scontent) ou ficheiro .mp4 directo, para “Tentar obter vídeo no app”. */
+function isLooseVideoUrlForResolve(s: string): boolean {
+  if (!/^https?:\/\//i.test(s) || s.length > 4_000) return false;
+  if (isAdLibraryKeywordSearchUrl(s)) return false;
+  if (/search_type=keyword|\/ads\/library\?.*&q=/i.test(s)) return false;
+  if (/\.(jpe?g|png|gif|webp|svg)(\?|#|$)/i.test(s) && !/video|v\//i.test(s)) return false;
+  if (/\.(mp4|m3u8|webm|mov)(\?|#|$)/i.test(s)) return true;
+  if (/fbcdn|fbsbx|facebook\.com|cdninstagram|instagram|scontent\./i.test(s)) {
+    if (/video|playable|mp4|m3u8|\/v\//i.test(s)) return true;
+    if (/fbcdn\.net/i.test(s) && !/\.(jpe?g|png|gif|webp)(\?|#|$)/i.test(s)) return true;
+  }
+  return false;
+}
+
 function isLikelyThumbCdnUrl(s: string): boolean {
   if (!/^https?:\/\//i.test(s) || s.length > 4_000) return false;
   if (!/fbcdn|scontent|facebook|fbsbx|cdninstagram/i.test(s)) return false;
@@ -445,6 +475,35 @@ function deepFindMediaUrl(
     return null;
   };
   return visit(root, 6);
+}
+
+/**
+ * Vídeo no item Apify: caminhos conhecidos, deep strict e por último deep alargado (IG/scontent/.mp4).
+ */
+export function findVideoUrlInApifyItemForResolve(item: Record<string, unknown>): string | null {
+  const p = pickLinkOrVideo(item);
+  if (p.video && !isAdLibraryKeywordSearchUrl(p.video)) {
+    if (isLikelyVideoCdnUrl(p.video) || isLooseVideoUrlForResolve(p.video)) {
+      return p.video;
+    }
+  }
+  const a = deepFindMediaUrl(item, isLikelyVideoCdnUrl);
+  if (a) return a;
+  return deepFindMediaUrl(item, isLooseVideoUrlForResolve);
+}
+
+/**
+ * Igual a `minedRowFromApifyItem`, mas preenche `video_url` com busca alargada no JSON (actor varia a forma).
+ */
+export function minedRowFromApifyItemWithResolve(
+  raw: Record<string, unknown>,
+  countryCode: string
+): MinedAdLibraryRow | null {
+  const r = minedRowFromApifyItem(raw, countryCode);
+  if (r?.video_url) return r;
+  const loose = findVideoUrlInApifyItemForResolve(raw);
+  if (!loose || !r) return r;
+  return { ...r, video_url: loose, vsl_url: loose };
 }
 
 export async function listAllApifyDatasetItems(

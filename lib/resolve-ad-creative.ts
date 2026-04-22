@@ -3,10 +3,10 @@ import {
   fetchApifyAdLibraryItems,
   getApifyAdLibraryTokenFromEnv,
   isApifyOnlyMode,
-  minedRowFromApifyItem,
+  minedRowFromApifyItemWithResolve,
   pickAdId,
 } from "@/lib/ad-library-apify";
-import { fetchAdArchiveObjectFromGraph, mapRow } from "@/lib/ad-library-miner";
+import { fetchAdArchiveObjectFromGraph, mapRow, type MinedAdLibraryRow } from "@/lib/ad-library-miner";
 import { mirrorAdCreativeToStorage } from "@/lib/mirror-creative-to-storage";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { AdRow } from "@/types/database";
@@ -32,6 +32,36 @@ function pickMediaPatch(mined: { video_url: string | null; vsl_url: string | nul
     out.landing_domain = mined.landing_domain;
   }
   return out;
+}
+
+function pickBestMinedFromApifyItems(
+  items: Record<string, unknown>[],
+  uid: string,
+  country: string
+): MinedAdLibraryRow | null {
+  for (const it of items) {
+    if (pickAdId(it) === uid) {
+      const r = minedRowFromApifyItemWithResolve(it, country);
+      if (r?.video_url) return r;
+    }
+  }
+  for (const it of items) {
+    const r = minedRowFromApifyItemWithResolve(it, country);
+    if (r?.video_url) return r;
+  }
+  return null;
+}
+
+function mergeByAdId(
+  a: Record<string, unknown>[],
+  b: Record<string, unknown>[]
+): Record<string, unknown>[] {
+  const m = new Map<string, Record<string, unknown>>();
+  for (const it of [...a, ...b]) {
+    const id = pickAdId(it) || `__idx_${m.size}`;
+    m.set(id, it);
+  }
+  return Array.from(m.values());
 }
 
 export async function resolveAdCreativeInCatalog(adId: string): Promise<ResolveCreativeResult> {
@@ -88,40 +118,43 @@ export async function resolveAdCreativeInCatalog(adId: string): Promise<ResolveC
     }
 
     const waitSecs = Math.min(300, Math.max(45, Number(process.env.RESOLVE_CREATIVE_APIFY_WAIT_SECS ?? "120")));
-    const { items, errors: apifyErrors } = await fetchApifyAdLibraryItems({
-      apifyToken: apify,
-      country,
-      libraryPageUrls: [adLibraryIdUrl(uid)],
-      count: 25,
-      waitSecs,
-      adLibraryUrlMedia: "video",
-    });
+    const onePass = (process.env.RESOLVE_CREATIVE_APIFY_ONE_PASS ?? "").trim() === "1";
 
-    let best: ReturnType<typeof minedRowFromApifyItem> = null;
-    for (const it of items) {
-      if (pickAdId(it) === uid) {
-        const r = minedRowFromApifyItem(it, country);
-        if (r?.video_url) {
-          best = r;
-          break;
-        }
-      }
-    }
-    if (!best?.video_url) {
-      for (const it of items) {
-        const r = minedRowFromApifyItem(it, country);
-        if (r?.video_url) {
-          best = r;
-          break;
-        }
-      }
+    let acc: Record<string, unknown>[] = [];
+    const apifyErrorList: string[] = [];
+    const passes: { url: string; media: "video" | "all" }[] = onePass
+      ? [{ url: adLibraryIdUrl(uid, { country, mediaType: "all" }), media: "all" }]
+      : [
+          { url: adLibraryIdUrl(uid, { country, mediaType: "all" }), media: "all" },
+          { url: adLibraryIdUrl(uid, { country, mediaType: "video" }), media: "video" },
+        ];
+
+    let best: MinedAdLibraryRow | null = null;
+    for (const p of passes) {
+      if (best?.video_url) break;
+      const { items, errors: e } = await fetchApifyAdLibraryItems({
+        apifyToken: apify,
+        country,
+        libraryPageUrls: [p.url],
+        count: 50,
+        waitSecs,
+        adLibraryUrlMedia: p.media,
+      });
+      apifyErrorList.push(...e);
+      acc = mergeByAdId(acc, items);
+      best = pickBestMinedFromApifyItems(acc, uid, country);
     }
 
     if (!best?.video_url) {
-      const bits = [graphErr, ...apifyErrors].filter(Boolean).join(" · ");
+      const bits = [graphErr, ...apifyErrorList].filter(Boolean).join(" · ");
+      const n = acc.length;
       return {
         error: "Não foi possível obter URL de vídeo",
-        detail: bits || "O Apify não devolveu ficheiro de vídeo para esta página.",
+        detail:
+          bits ||
+          (n === 0
+            ? "O Apify devolveu 0 linhas (a run pode ter acabado cedo: aumenta RESOLVE_CREATIVE_APIFY_WAIT_SECS, ex. 180–300) ou a página exige outro país — confirma o país do anúncio e APIFY_AD_LIBRARY_COUNTRY."
+            : `Foram processadas ${n} entradas do Apify, mas nenhum URL de vídeo (anúncio pode ser imagem, ou a Meta não expõe MP4 neste nó). ${bits ? "" : "Verifica a run no painel do Apify."}`),
       };
     }
 
