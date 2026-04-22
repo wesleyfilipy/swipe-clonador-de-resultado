@@ -1,3 +1,4 @@
+-- [DEPRECADO] Esquema mínimo antigo. Usa: supabase/complete_install.sql
 create extension if not exists "uuid-ossp";
 
 create table if not exists public.users (

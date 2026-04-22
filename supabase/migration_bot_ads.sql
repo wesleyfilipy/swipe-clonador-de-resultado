@@ -1,3 +1,4 @@
+-- [DEPRECADO] Ver supabase/complete_install.sql
 -- Migração: mineração automática, score, status, storage paths
 -- Rode no SQL Editor após schema.sql
 

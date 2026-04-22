@@ -1,3 +1,4 @@
+-- [DEPRECADO] Ver supabase/complete_install.sql
 -- Weekly centralized catalog (Apify) — "Winning Ads Spy" columns + ingest state
 -- Run in Supabase SQL Editor after review.
 

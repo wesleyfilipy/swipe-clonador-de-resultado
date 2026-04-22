@@ -8,7 +8,13 @@ import {
   toMediaProxyUrl,
   isEmbeddableInIframe,
 } from "@/lib/media";
-import { getCreativeThumbSrc, getCreativeVideoSrc, hasCreativoFile, publicUrlForStoragePath } from "@/lib/creative-urls";
+import {
+  getCreativoDownloadSourceUrl,
+  getCreativeThumbSrc,
+  getCreativeVideoSrc,
+  hasCreativoFile,
+  hideDuplicateVslSplit,
+} from "@/lib/creative-urls";
 import { TranscriptionSheet } from "./TranscriptionSheet";
 
 type Props = {
@@ -77,7 +83,10 @@ export function AdSlide({ ad, active, preload, favorited, vslLayout, onFavorite,
     ? `https://${ad.landing_domain.replace(/^https?:\/\//i, "").split("/")[0]}`
     : null;
 
-  const showSplitVsl = vslLayout === "split" && (vslIsVideo || vslIsPage);
+  const showSplitVsl =
+    vslLayout === "split" &&
+    (vslIsVideo || vslIsPage) &&
+    !hideDuplicateVslSplit(ad);
 
   return (
     <section className="feed-item h-full min-h-0 w-full max-w-6xl mx-auto relative bg-black flex flex-col">
@@ -244,9 +253,7 @@ export function AdSlide({ ad, active, preload, favorited, vslLayout, onFavorite,
         />
         <IconButton
           label="Baixar criativo"
-          onClick={() =>
-            downloadUrl(publicUrlForStoragePath(ad.video_storage_path) ?? ad.video_url, `${ad.title}-criativo.mp4`)
-          }
+          onClick={() => downloadUrl(getCreativoDownloadSourceUrl(ad), `${ad.title}-criativo.mp4`)}
           icon={<span className="text-white">⬇</span>}
           disabled={!hasCreativoFile(ad)}
         />

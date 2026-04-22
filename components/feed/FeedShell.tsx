@@ -344,7 +344,8 @@ export function FeedShell({ email, initialAds = [], initialHasMore = true }: Pro
     if (!el) return;
     const h = el.clientHeight;
     const idx = Math.max(0, Math.min(i, ads.length - 1));
-    el.scrollTo({ top: idx * h, behavior: "smooth" });
+    // "auto" evita o bug do "smooth" + onScroll a ver scrollTop≈0 e active no slide errado
+    el.scrollTo({ top: idx * h, behavior: "auto" });
     setActive(idx);
   }, [ads.length]);
 

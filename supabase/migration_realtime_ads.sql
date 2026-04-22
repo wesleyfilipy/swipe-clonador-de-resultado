@@ -1,3 +1,4 @@
+-- [DEPRECADO] Ver supabase/complete_install.sql
 -- Rode no SQL Editor se o projeto já existia sem Realtime em `public.ads` (feed escuta INSERT).
 do $$
 begin
