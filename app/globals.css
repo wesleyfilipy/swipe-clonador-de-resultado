@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+  background: #050508;
+  color: #f4f4f5;
+}
+
+/* Feed snap scroll (TikTok-style) */
+.feed-scroll {
+  scroll-snap-type: y mandatory;
+  overflow-y: auto;
+  height: 100dvh;
+  -webkit-overflow-scrolling: touch;
+}
+
+.feed-item {
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+/* Hide scrollbar but keep scroll */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

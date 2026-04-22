@@ -1,0 +1,39 @@
+{
+  "name": "vsl-swipe-miner",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "seed": "npx tsx scripts/seed-sample-ads.ts",
+    "bot:scrape": "npm --prefix bot run scrape",
+    "bot:cleanup": "npm --prefix bot run cleanup",
+    "bot:full": "npm --prefix bot run full"
+  },
+  "dependencies": {
+    "@stripe/stripe-js": "^4.8.0",
+    "@supabase/ssr": "^0.5.2",
+    "@supabase/supabase-js": "^2.47.10",
+    "@vercel/functions": "^3.4.3",
+    "apify-client": "^2.23.0",
+    "next": "14.2.18",
+    "openai": "^4.73.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "stripe": "^17.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.6",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "14.2.18",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

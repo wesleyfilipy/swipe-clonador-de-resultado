@@ -1,0 +1,31 @@
+1) Na raiz do projeto ou em bot/, crie .env com:
+   SUPABASE_URL=
+   SUPABASE_SERVICE_ROLE_KEY=
+   OPENAI_API_KEY=
+   Opcional: BOT_HEADFUL=1 (ver navegador), BOT_MAX_ADS=300
+
+2) Rode no Supabase SQL Editor:
+   ../supabase/migration_bot_ads.sql
+
+3) Instale dependências do bot:
+   cd bot && npm install
+
+4) Primeira execução (baixa Chromium):
+   npx playwright install chromium
+
+5) Rodar mineração:
+   npm run scrape
+
+6) Limpeza (remove fracos / stale / landing quebrada):
+   npm run cleanup
+
+7) Cron (exemplos):
+   Windows Task Scheduler: a cada 6h execute "npm run scrape" na pasta bot.
+   Linux crontab:
+   0 */6 * * * cd /caminho/bot && /usr/bin/npm run scrape >> /var/log/adbot.log 2>&1
+   15 3 * * * cd /caminho/bot && /usr/bin/npm run cleanup >> /var/log/adbot-cleanup.log 2>&1
+
+AVISO LEGAL: a Meta pode restringir scraping da Ad Library. Use delays, não abuse,
+e avalie os termos de uso. Este bot é um esqueleto técnico; seletores quebram com mudanças da UI.
+
+SEGURANÇA: nunca commite chaves. Se vazou em chat, rotacione no Supabase/OpenAI.
