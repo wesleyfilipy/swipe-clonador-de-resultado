@@ -1,0 +1,24 @@
+-- ============================================================================
+-- APENAS DOCUMENTAÇÃO — NÃO ACRESCENTAR SQL EXECUTÁVEL A ESTE FICHEIRO
+-- (Se o SQL Editor mostrar 42501, apagaste isto e colaste insert/policy.)
+--
+-- Nada disto corre no painel. O bucket `creatives` cria-se em:
+--   Storage → New bucket → nome: creatives → Public = ON
+--
+-- Já tens o bucket? Paraste. Não corras este ficheiro; não precisas.
+-- O app faz upload com SUPABASE_SERVICE_ROLE_KEY (backend).
+-- ============================================================================
+--
+-- Porquê nunca: insert into storage.buckets …
+--   Supabase (SQL Editor) → ERROR: must be owner of table buckets
+--
+-- Porquê evitar: create policy on storage.objects (muitas vezes)
+--   Bucket "Public" no UI já expõe leitura via URL pública. Política extra
+--   só se souberes que precisas; pode falhar consoante o role.
+--
+-- URLs esperadas (depois de upload no código):
+--   https://<ref>.supabase.co/storage/v1/object/public/creatives/<pasta>/creative.mp4
+--
+-- Alinhamento opcional: limite de ficheiro no bucket (ex. 100 MB) com
+-- CREATIVE_CACHE_MAX_BYTES no .env
+-- ============================================================================

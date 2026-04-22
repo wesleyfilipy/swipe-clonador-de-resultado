@@ -8,6 +8,7 @@ import {
   toMediaProxyUrl,
   isEmbeddableInIframe,
 } from "@/lib/media";
+import { getCreativeThumbSrc, getCreativeVideoSrc, hasCreativoFile, publicUrlForStoragePath } from "@/lib/creative-urls";
 import { TranscriptionSheet } from "./TranscriptionSheet";
 
 type Props = {
@@ -47,7 +48,7 @@ export function AdSlide({ ad, active, preload, favorited, vslLayout, onFavorite,
     }
   }, [active, vslLayout, ad.vsl_url]);
 
-  const creative: string | undefined = (toMediaProxyUrl(ad.video_url) ?? ad.video_url) || undefined;
+  const creative: string | undefined = getCreativeVideoSrc(ad) ?? undefined;
   const vsl = ad.vsl_url;
   const vslIsVideo = isDirectVideoUrl(vsl);
   const vslIsPage = isLikelyEmbeddablePage(vsl) && !vslIsVideo;
@@ -86,7 +87,7 @@ export function AdSlide({ ad, active, preload, favorited, vslLayout, onFavorite,
             ref={videoRef}
             className="h-full w-full object-cover bg-black"
             src={creative}
-            poster={toMediaProxyUrl(ad.thumbnail) ?? ad.thumbnail ?? undefined}
+            poster={getCreativeThumbSrc(ad) ?? undefined}
             playsInline
             loop
             muted={muted}
@@ -243,9 +244,11 @@ export function AdSlide({ ad, active, preload, favorited, vslLayout, onFavorite,
         />
         <IconButton
           label="Baixar criativo"
-          onClick={() => downloadUrl(ad.video_url, `${ad.title}-criativo.mp4`)}
+          onClick={() =>
+            downloadUrl(publicUrlForStoragePath(ad.video_storage_path) ?? ad.video_url, `${ad.title}-criativo.mp4`)
+          }
           icon={<span className="text-white">⬇</span>}
-          disabled={!ad.video_url}
+          disabled={!hasCreativoFile(ad)}
         />
         <IconButton
           label="Baixar VSL"

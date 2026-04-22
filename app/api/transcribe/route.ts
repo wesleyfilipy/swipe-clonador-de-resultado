@@ -3,6 +3,8 @@ import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isDirectVideoUrl } from "@/lib/media";
+import { publicUrlForStoragePath } from "@/lib/creative-urls";
+import type { AdRow } from "@/types/database";
 
 const MAX_WHISPER_BYTES = 24 * 1024 * 1024;
 
@@ -26,7 +28,12 @@ export async function POST(req: Request) {
   const { data: ad, error: adErr } = await supabase.from("ads").select("*").eq("id", body.ad_id).single();
   if (adErr || !ad) return NextResponse.json({ error: "Anúncio não encontrado" }, { status: 404 });
 
-  const url = body.type === "creative" ? ad.video_url : ad.vsl_url;
+  const row = ad as AdRow;
+  const creativeUrlForTranscribe =
+    body.type === "creative" && row.video_storage_path
+      ? publicUrlForStoragePath(row.video_storage_path) ?? row.video_url
+      : row.video_url;
+  const url = body.type === "creative" ? creativeUrlForTranscribe : ad.vsl_url;
   if (!isDirectVideoUrl(url)) {
     return NextResponse.json(
       {

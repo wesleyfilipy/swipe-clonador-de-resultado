@@ -14,11 +14,14 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
+const COUNTRY_RE = /^[A-Z]{2,3}$/;
+
 /**
  * Usuário logado: tenta mineração Ad Library quando o feed ainda não tem linhas visíveis.
  * Lock só para este POST (não compete com o waitUntil do /feed). Desligue com USER_CATALOG_FILL=0.
+ * Body JSON opcional: `{ "country": "BR" }` — minera a Ad Library desse mercado; grava `country` em cada linha.
  */
-export async function POST() {
+export async function POST(request: Request) {
   if (process.env.USER_CATALOG_FILL === "0") {
     return NextResponse.json({ ok: false, skipped: "disabled", message: "USER_CATALOG_FILL=0" }, { status: 403 });
   }
@@ -38,6 +41,20 @@ export async function POST() {
     );
   }
 
+  let country: string | undefined;
+  let adLibraryUrlMedia: "video" | "all" | undefined;
+  try {
+    const j = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    if (j && typeof j === "object") {
+      const c = typeof j.country === "string" ? j.country.trim().toUpperCase() : "";
+      if (COUNTRY_RE.test(c)) country = c;
+      const m = j.adLibraryUrlMedia;
+      if (m === "video" || m === "all") adLibraryUrlMedia = m;
+    }
+  } catch {
+    /* corpo vazio */
+  }
+
   let admin: ReturnType<typeof createAdminClient>;
   try {
     admin = createAdminClient();
@@ -46,12 +63,13 @@ export async function POST() {
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 
-  const { count, error: cErr } = await countFeedVisibleAds(admin);
+  const countScope = country ? { country } : undefined;
+  const { count, error: cErr } = await countFeedVisibleAds(admin, countScope);
   if (cErr) {
     return NextResponse.json({ ok: false, error: cErr.message }, { status: 500 });
   }
   if ((count ?? 0) > 0) {
-    return NextResponse.json({ ok: true, skipped: "has_ads", count });
+    return NextResponse.json({ ok: true, skipped: "has_ads", count, country: countScope?.country });
   }
 
   if (process.env.AUTO_AD_LIBRARY_SYNC === "0") {
@@ -78,7 +96,7 @@ export async function POST() {
     }
     acquired = true;
 
-    const result = await runAdLibraryIngest({ mode: "catalog_post_fill" });
+    const result = await runAdLibraryIngest({ mode: "catalog_post_fill", country, adLibraryUrlMedia });
 
     if (result.skipped === "no_token") {
       await setCatalogMineLockCooldown(admin, failCooldownSec);

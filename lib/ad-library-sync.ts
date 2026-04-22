@@ -1,4 +1,4 @@
-import { getApifyAdLibraryTokenFromEnv, isApifyOnlyMode } from "@/lib/ad-library-apify";
+import { getApifyAdLibraryTokenFromEnv, isApifyOnlyMode, isCatalogVideoOnlyDefault } from "@/lib/ad-library-apify";
 import { mineAdLibraryDaily, AD_LIBRARY_KEYWORDS, type MinedAdLibraryRow } from "@/lib/ad-library-miner";
 import { countFeedVisibleAds } from "@/lib/feed-ads-query";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -54,6 +54,7 @@ export function dedupeMinedRowsByAdId(rows: MinedAdLibraryRow[]): MinedAdLibrary
       views_week: Math.max(prev.views_week ?? 0, r.views_week ?? 0),
       views_day: Math.max(prev.views_day ?? 0, r.views_day ?? 0),
       active_days: Math.max(prev.active_days ?? 0, r.active_days ?? 0),
+      country: (r.country && String(r.country)) || prev.country || null,
     });
   }
   return Array.from(m.values());
@@ -240,9 +241,17 @@ async function mergeAdLibraryDailyRows(
  * - `cron_replace`: funde com o catálogo `ad_library_daily` (upsert por id) e poda acima de `AD_LIBRARY_CATALOG_CAP` (padrão 500), removendo os de menor `appearance_count` / `views_week`.
  * - `catalog_post_fill`: catálogo vazio, mineração curta (env CATALOG_FILL_*) para o botão /api/catalog-fill.
  */
-export async function runAdLibraryIngest(options: { mode: AdLibraryIngestMode }): Promise<AdLibrarySyncResult> {
-  const { mode } = options;
+export async function runAdLibraryIngest(options: {
+  mode: AdLibraryIngestMode;
+  /** País da Ad Library (ex.: BR, US). Define `countries` + `apifyCountry` na mineração. */
+  country?: string;
+  /** URL Apify: `media_type=video` (padrão) ou `all`. */
+  adLibraryUrlMedia?: "video" | "all";
+}): Promise<AdLibrarySyncResult> {
+  const { mode, country: ingestCountry, adLibraryUrlMedia } = options;
   const errors: string[] = [];
+  const ic = ingestCountry?.trim().toUpperCase() ?? "";
+  const countScope = ic.length >= 2 && ic.length <= 3 ? { country: ic } : undefined;
 
   if (
     (mode === "fill_if_empty" || mode === "feed_blocking_fill" || mode === "catalog_post_fill") &&
@@ -301,7 +310,7 @@ export async function runAdLibraryIngest(options: { mode: AdLibraryIngestMode })
   };
 
   if (mode === "fill_if_empty" || mode === "feed_blocking_fill" || mode === "catalog_post_fill") {
-    const { count: visibleCount, error: countErr } = await countFeedVisibleAds(admin);
+    const { count: visibleCount, error: countErr } = await countFeedVisibleAds(admin, countScope);
     if (countErr) {
       return { ok: false, inserted: 0, errors: [countErr.message], message: countErr.message };
     }
@@ -367,16 +376,21 @@ export async function runAdLibraryIngest(options: { mode: AdLibraryIngestMode })
   const apifyQuickFill =
     mode === "feed_blocking_fill" || mode === "catalog_post_fill" || mode === "fill_if_empty";
 
+  const mineCountries = countScope ? [countScope.country] : undefined;
+
   let { rows, errors: mineErrors } = await mineAdLibraryDaily({
     accessToken: token,
     maxAds,
     maxPagesPerKeyword: maxPages,
     keywords: keywordsSlice,
     apifyQuickFill,
+    countries: mineCountries,
+    apifyCountry: countScope?.country,
+    adLibraryUrlMedia,
   });
   errors.push(...mineErrors);
 
-  if (rows.length === 0 && envMedia === "VIDEO") {
+  if (rows.length === 0 && envMedia === "VIDEO" && !isCatalogVideoOnlyDefault()) {
     const retry = await mineAdLibraryDaily({
       accessToken: token,
       maxAds,
@@ -384,6 +398,9 @@ export async function runAdLibraryIngest(options: { mode: AdLibraryIngestMode })
       keywords: keywordsSlice,
       mediaType: "ALL",
       apifyQuickFill,
+      countries: mineCountries,
+      apifyCountry: countScope?.country,
+      adLibraryUrlMedia,
     });
     errors.push("(retry com media_type=ALL)", ...retry.errors);
     rows = retry.rows;

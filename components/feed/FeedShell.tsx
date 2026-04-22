@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useBrowserSupabase } from "@/components/supabase/BrowserSupabaseProvider";
-import { toMediaProxyUrl } from "@/lib/media";
+import { getCreativeThumbSrc } from "@/lib/creative-urls";
 import type { AdRow, SortMode } from "@/types/database";
 import { AdSlide } from "./AdSlide";
 
@@ -20,6 +20,27 @@ const NICHES = [
   "saúde",
   "relacionamento",
   "geral",
+] as const;
+
+const FEED_COUNTRY_LS = "espiao_nutra_feed_country";
+const COUNTRY_RE = /^[A-Z]{2,3}$/i;
+
+const FEED_COUNTRIES = [
+  { code: "US", label: "EUA" },
+  { code: "BR", label: "Brasil" },
+  { code: "PT", label: "Portugal" },
+  { code: "AR", label: "Argentina" },
+  { code: "MX", label: "México" },
+  { code: "GB", label: "Reino Unido" },
+  { code: "CA", label: "Canadá" },
+  { code: "DE", label: "Alemanha" },
+  { code: "FR", label: "França" },
+  { code: "ES", label: "Espanha" },
+  { code: "IT", label: "Itália" },
+  { code: "IN", label: "Índia" },
+  { code: "ID", label: "Indonésia" },
+  { code: "CO", label: "Colômbia" },
+  { code: "CL", label: "Chile" },
 ] as const;
 
 type Props = {
@@ -42,6 +63,7 @@ export function FeedShell({ email, initialAds = [], initialHasMore = true }: Pro
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [niche, setNiche] = useState<string>("todos");
   const [sort, setSort] = useState<SortMode>("scaled");
+  const [feedCountry, setFeedCountry] = useState("US");
   const [vslLayout, setVslLayout] = useState<"split" | "modal">("split");
   const [active, setActive] = useState(0);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
@@ -50,6 +72,7 @@ export function FeedShell({ email, initialAds = [], initialHasMore = true }: Pro
   const [catalogTimedOut, setCatalogTimedOut] = useState(false);
   const [pollNonce, setPollNonce] = useState(0);
   const [catalogKickBusy, setCatalogKickBusy] = useState(false);
+  const [cacheStorageBusy, setCacheStorageBusy] = useState(false);
   const lastHistory = useRef<string | null>(null);
   /** Evita vários GET /api/ads ao mesmo tempo (Realtime, foco da aba, botão). */
   const catalogFetchInFlight = useRef(false);
@@ -71,6 +94,7 @@ export function FeedShell({ email, initialAds = [], initialHasMore = true }: Pro
       sort,
       offset: String(offsetRef.current),
       limit: "8",
+      country: feedCountry,
     });
     const res = await fetch(`/api/ads?${params.toString()}`, { credentials: "include" });
     const json = await res.json();
@@ -95,13 +119,32 @@ export function FeedShell({ email, initialAds = [], initialHasMore = true }: Pro
       setAds((prev) => [...prev, ...rows]);
     }
     offsetRef.current += rows.length;
-  }, [niche, sort]);
+  }, [niche, sort, feedCountry]);
 
   useEffect(() => {
     if (ads.length > 0) {
       setCatalogTimedOut(false);
     }
   }, [ads.length]);
+
+  useEffect(() => {
+    try {
+      const s = localStorage.getItem(FEED_COUNTRY_LS);
+      if (s && COUNTRY_RE.test(s)) {
+        setFeedCountry(s.toUpperCase());
+      }
+    } catch {
+      /* */
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(FEED_COUNTRY_LS, feedCountry);
+    } catch {
+      /* */
+    }
+  }, [feedCountry]);
 
   const kickCatalogFill = useCallback(async () => {
     if (catalogFetchInFlight.current) return;
@@ -114,7 +157,12 @@ export function FeedShell({ email, initialAds = [], initialHasMore = true }: Pro
     try {
       let res: Response;
       try {
-        res = await fetch("/api/catalog-fill", { method: "POST", credentials: "include" });
+        res = await fetch("/api/catalog-fill", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ country: feedCountry }),
+        });
       } catch {
         setLoadError("Sem conexão ou o servidor encerrou antes da resposta (timeout). Tente de novo em instantes.");
         return;
@@ -176,7 +224,29 @@ export function FeedShell({ email, initialAds = [], initialHasMore = true }: Pro
       catalogFetchInFlight.current = false;
       setCatalogKickBusy(false);
     }
-  }, [fetchPage]);
+  }, [fetchPage, feedCountry]);
+
+  const pushCreativesToStorage = useCallback(async () => {
+    if (cacheStorageBusy) return;
+    setCacheStorageBusy(true);
+    try {
+      const res = await fetch("/api/cache-creatives", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ limit: 3 }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { error?: string; results?: { ok: boolean }[] };
+      if (!res.ok) {
+        setLoadError(typeof j.error === "string" ? j.error : "Falha ao gravar no Storage.");
+        return;
+      }
+      await fetchPage(true, { silent: true });
+      setLoadError(null);
+    } finally {
+      setCacheStorageBusy(false);
+    }
+  }, [cacheStorageBusy, fetchPage]);
 
   /** Quando o servidor gravar novos anúncios no Supabase, atualiza a lista (Realtime na tabela `ads`). */
   useEffect(() => {
@@ -214,7 +284,7 @@ export function FeedShell({ email, initialAds = [], initialHasMore = true }: Pro
     };
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
-  }, [ads.length, niche, fetchPage]);
+  }, [ads.length, niche, feedCountry, fetchPage]);
 
   /**
    * Catálogo ainda vazio após a primeira carga: consulta o Supabase de novo a cada poucos segundos
@@ -243,7 +313,7 @@ export function FeedShell({ email, initialAds = [], initialHasMore = true }: Pro
     }, intervalMs);
 
     return () => clearInterval(id);
-  }, [ads.length, loading, niche, sort, fetchPage, pollNonce]);
+  }, [ads.length, loading, niche, sort, feedCountry, fetchPage, pollNonce]);
 
   useEffect(() => {
     const serverDefault = niche === "todos" && sort === "scaled";
@@ -254,13 +324,13 @@ export function FeedShell({ email, initialAds = [], initialHasMore = true }: Pro
     didSkipHydratedFetch.current = true;
     void fetchPage(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- initialAds é snapshot do servidor na hidratação
-  }, [fetchPage, niche, sort]);
+  }, [fetchPage, niche, sort, feedCountry]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 0 });
     setActive(0);
     lastHistory.current = null;
-  }, [niche, sort]);
+  }, [niche, sort, feedCountry]);
 
   useEffect(() => {
     fetch("/api/favorites", { credentials: "include" })
@@ -412,10 +482,27 @@ export function FeedShell({ email, initialAds = [], initialHasMore = true }: Pro
             </button>
           </div>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-1 border-t border-white/5">
-            <p className="text-[10px] text-zinc-500 leading-snug">
+            <div className="flex flex-col gap-1.5 w-full sm:max-w-xs shrink-0">
+              <label className="text-[10px] text-zinc-500">
+                <span className="text-zinc-400 font-medium">País do catálogo / mineração</span>
+                <select
+                  value={FEED_COUNTRIES.some((c) => c.code === feedCountry) ? feedCountry : "US"}
+                  onChange={(e) => setFeedCountry(e.target.value.toUpperCase())}
+                  className="mt-0.5 w-full rounded-md border border-zinc-600 bg-zinc-900/80 px-2 py-1.5 text-[11px] text-zinc-200 focus:border-indigo-500/80 focus:outline-none"
+                >
+                  {FEED_COUNTRIES.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.label} ({c.code})
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <p className="text-[10px] text-zinc-500 leading-snug flex-1 min-w-0">
               <strong className="text-zinc-400">Nichos:</strong> a mineração muitas vezes grava tudo em <span className="text-zinc-300">geral</span>{" "}
               — usa <span className="text-zinc-300">todos</span> ou <span className="text-zinc-300">geral</span> se um filtro
-              específico (ex. fitness) vier vazio.
+              específico (ex. fitness) vier vazio. Só <span className="text-zinc-300">vídeo</span> (50+ duplicatas no lote) entra no catálogo; escolhe o
+              mercado e usa <span className="text-zinc-300">Buscar novos (minera)</span> com o feed vazio.
             </p>
             <div className="flex flex-wrap gap-2 shrink-0">
               <button
@@ -444,6 +531,18 @@ export function FeedShell({ email, initialAds = [], initialHasMore = true }: Pro
               >
                 {catalogKickBusy ? "A buscar…" : "Buscar novos (minera)"}
               </button>
+              <button
+                type="button"
+                disabled={cacheStorageBusy}
+                onClick={() => {
+                  setLoadError(null);
+                  void pushCreativesToStorage();
+                }}
+                className="rounded-lg border border-emerald-700/60 bg-emerald-950/40 hover:bg-emerald-900/30 disabled:opacity-50 px-3 py-1.5 text-[11px] text-emerald-200"
+                title="Descarrega criativos (50+ duplicatas) do CDN da Meta e grava no Storage do Supabase para o player e a esteira usarem ligação directa"
+              >
+                {cacheStorageBusy ? "A gravar…" : "Gravar vídeos no Storage"}
+              </button>
             </div>
           </div>
         </div>
@@ -459,7 +558,7 @@ export function FeedShell({ email, initialAds = [], initialHasMore = true }: Pro
             className="max-w-6xl mx-auto flex gap-2.5 overflow-x-auto no-scrollbar px-3 pb-3 pt-1 snap-x snap-mandatory scroll-smooth"
           >
             {ads.map((ad, i) => {
-              const poster = toMediaProxyUrl(ad.thumbnail) ?? ad.thumbnail ?? undefined;
+              const poster = getCreativeThumbSrc(ad) ?? undefined;
               return (
                 <button
                   key={ad.id}

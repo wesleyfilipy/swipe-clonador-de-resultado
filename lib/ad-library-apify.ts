@@ -248,21 +248,44 @@ export function duplicateGroupKey(item: Record<string, unknown>): string {
   return `h:${firstNonEmptyString(item.headline, item.title).slice(0, 200)}|${pickCopy(item).slice(0, 120)}`;
 }
 
+/**
+ * Padrão `video`: URLs da Ad Library com `media_type=video` (não rastreia só anúncios de imagem).
+ * `all`: inclui estáticos; o filtro `AD_LIBRARY_CATALOG_VIDEO_ONLY` (padrão 1) ainda exige `video_url` no catálogo.
+ */
 export function buildAdLibraryUsKeywordUrls(
   keywords: readonly string[],
-  country: string
+  country: string,
+  media: "video" | "all" = "video"
 ): { url: string }[] {
   const cc = (country || "US").toUpperCase();
+  const mt = media === "all" ? "all" : "video";
   return keywords.map((q) => ({
     url: `https://www.facebook.com/ads/library/?active_status=all&ad_type=all&country=${cc}&q=${encodeURIComponent(
       q
-    )}&search_type=keyword_unordered&media_type=all`,
+    )}&search_type=keyword_unordered&media_type=${mt}`,
   }));
+}
+
+/**
+ * 1 = catálogo só com linha que tem URL de vídeo (padrão). 0 = permite imagem (com AD_LIBRARY_CATALOG_REQUIRE_MEDIA).
+ */
+export function isCatalogVideoOnlyDefault(): boolean {
+  const v = (process.env.AD_LIBRARY_CATALOG_VIDEO_ONLY ?? "1").trim().toLowerCase();
+  if (v === "0" || v === "false" || v === "no" || v === "off") return false;
+  return true;
+}
+
+/** `video` (default) ou `all` na query da Ad Library; sobrescreve o argumento de função. */
+export function resolveApifyAdLibraryUrlMedia(override?: "video" | "all"): "video" | "all" {
+  if (override) return override;
+  const v = (process.env.APIFY_AD_LIBRARY_AD_URL_MEDIA ?? "video").trim().toLowerCase();
+  if (v === "all" || v === "images" || v === "image" || v === "photo" || v === "photos") return "all";
+  return "video";
 }
 
 function mapItemToRow(
   raw: Record<string, unknown>,
-  ctx: { duplicateSize: number; winner: boolean; scaled: boolean }
+  ctx: { duplicateSize: number; winner: boolean; scaled: boolean; countryCode: string }
 ): MinedAdLibraryRow | null {
   const id = pickAdId(raw);
   if (!id) return null;
@@ -313,6 +336,7 @@ function mapItemToRow(
     mine_source: "ad_library_daily",
     appearance_count: ctx.duplicateSize,
     landing_domain: landingHost,
+    country: ctx.countryCode,
   };
 }
 
@@ -338,6 +362,7 @@ function catalogRequireScaledOnly(): boolean {
 }
 
 function catalogRequireVideoOrThumb(): boolean {
+  if (isCatalogVideoOnlyDefault()) return false;
   const v = (process.env.AD_LIBRARY_CATALOG_REQUIRE_MEDIA ?? "").trim().toLowerCase();
   return v === "1" || v === "true" || v === "yes";
 }
@@ -450,6 +475,8 @@ export type MineFromApifyParams = {
   /** Limite de resultados do actor (total da run, distribuído entre as URLs de keyword). */
   apifyCount: number;
   country: string;
+  /** `media_type` na URL da Ad Library: video (padrão) ou all. */
+  adLibraryUrlMedia?: "video" | "all";
   /** Sobrescreve o tempo máximo de espera da run do actor (preenchimento rápido no /feed). */
   waitSecs?: number;
   /**
@@ -468,6 +495,7 @@ export async function fetchApifyAdLibraryItems(p: {
   keywords: readonly string[];
   count: number;
   waitSecs?: number;
+  adLibraryUrlMedia?: "video" | "all";
 }): Promise<{
   items: Record<string, unknown>[];
   errors: string[];
@@ -476,7 +504,8 @@ export async function fetchApifyAdLibraryItems(p: {
 }> {
   const errors: string[] = [];
   const client = new ApifyClient({ token: p.apifyToken });
-  const urls = buildAdLibraryUsKeywordUrls(p.keywords, p.country);
+  const media = resolveApifyAdLibraryUrlMedia(p.adLibraryUrlMedia);
+  const urls = buildAdLibraryUsKeywordUrls(p.keywords, p.country, media);
   if (urls.length === 0) {
     return { items: [], errors: ["Nenhuma keyword para o Apify."], runId: "", defaultDatasetId: "" };
   }
@@ -529,12 +558,15 @@ export async function mineFromApify(
       : defaultMinDupForCatalog();
   const requireScaled = catalogRequireScaledOnly();
   const requireMedia = catalogRequireVideoOrThumb();
+  const videoOnly = isCatalogVideoOnlyDefault();
+  const countryCode = (p.country || "US").toUpperCase();
   const { items, errors } = await fetchApifyAdLibraryItems({
     apifyToken: p.apifyToken,
     country: p.country,
     keywords: p.keywords,
     count: p.apifyCount,
     waitSecs: p.waitSecs,
+    adLibraryUrlMedia: resolveApifyAdLibraryUrlMedia(p.adLibraryUrlMedia),
   });
   if (items.length === 0) {
     return { rows: [], errors: errors.length ? errors : [] };
@@ -583,9 +615,11 @@ export async function mineFromApify(
     }
     const strong = isStrongDupBySize(dupSize, minDup);
     const winner = strong && scaled;
-    const row = mapItemToRow(raw, { duplicateSize: effectiveDups, winner, scaled });
+    const row = mapItemToRow(raw, { duplicateSize: effectiveDups, winner, scaled, countryCode });
     if (!row) continue;
-    if (requireMedia && !row.video_url && !row.thumbnail) {
+    if (videoOnly) {
+      if (!row.video_url) continue;
+    } else if (requireMedia && !row.video_url && !row.thumbnail) {
       continue;
     }
     seenId.add(id);

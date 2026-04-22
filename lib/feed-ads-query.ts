@@ -4,12 +4,17 @@ import type { AdRow, SortMode } from "@/types/database";
 
 /** Mesmo filtro do feed (exclui instant_demo e outros mine_source fora da lista). */
 export async function countFeedVisibleAds(
-  supabase: SupabaseClient
+  supabase: SupabaseClient,
+  opts?: { country?: string }
 ): Promise<{ count: number | null; error: { message: string } | null }> {
-  const { count, error } = await supabase
+  let q = supabase
     .from("ads")
     .select("id", { count: "exact", head: true })
     .or("mine_source.is.null,mine_source.in.(manual,ad_library_daily,spy_weekly)");
+  if (opts?.country) {
+    q = q.eq("country", opts.country.toUpperCase());
+  }
+  const { count, error } = await q;
   if (error) return { count: null, error: { message: error.message } };
   return { count: count ?? 0, error: null };
 }

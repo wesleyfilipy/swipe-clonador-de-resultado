@@ -6,7 +6,12 @@
 
 import crypto from "node:crypto";
 
-import { getApifyAdLibraryTokenFromEnv, isApifyOnlyMode, mineFromApify } from "@/lib/ad-library-apify";
+import {
+  getApifyAdLibraryTokenFromEnv,
+  isApifyOnlyMode,
+  isCatalogVideoOnlyDefault,
+  mineFromApify,
+} from "@/lib/ad-library-apify";
 
 const GRAPH_VERSION = "v21.0";
 
@@ -55,6 +60,8 @@ export type MinedAdLibraryRow = {
   appearance_count: number;
   /** Host extraído do link de destino, quando existir. */
   landing_domain?: string | null;
+  /** Código ISO do país usado na mineração (ex.: US, BR). */
+  country?: string | null;
 };
 
 function daysSince(iso: string | null | undefined): number {
@@ -97,7 +104,7 @@ function extractVideoUrl(raw: Record<string, unknown>): string | null {
   return null;
 }
 
-function mapRow(raw: Record<string, unknown>): MinedAdLibraryRow | null {
+function mapRow(raw: Record<string, unknown>, countryCode: string | null): MinedAdLibraryRow | null {
   const id = raw.id != null ? String(raw.id) : "";
   if (!id) return null;
   const page = String(raw.page_name ?? "Anúncio Meta");
@@ -122,6 +129,7 @@ function mapRow(raw: Record<string, unknown>): MinedAdLibraryRow | null {
     facebook_ad_id: id,
     mine_source: "ad_library_daily",
     appearance_count: 1,
+    country: countryCode,
   };
 }
 
@@ -220,6 +228,14 @@ export async function mineAdLibraryDaily(params: {
   /** Sobrescreve META_AD_LIBRARY_MEDIA_TYPE (ex.: retry com ALL). */
   mediaType?: string;
   /**
+   * Apify: prioridade sobre `APIFY_AD_LIBRARY_COUNTRY` — país do catálogo (ex. escolhido no feed).
+   */
+  apifyCountry?: string;
+  /**
+   * Apify: `media_type` na URL da Ad Library (`video` padrão no projeto).
+   */
+  adLibraryUrlMedia?: "video" | "all";
+  /**
    * Apify: run menor e `waitSecs` curto para caber no `waitUntil` + `maxDuration` do /feed na Vercel
    * (run grande = timeout e 0 anúncios no Supabase).
    */
@@ -242,9 +258,13 @@ export async function mineAdLibraryDaily(params: {
 
   const apify = getApifyAdLibraryTokenFromEnv();
   if (apify) {
+    const fromParam = (params.apifyCountry ?? "").trim().toUpperCase();
     const countryFromEnv = (process.env.APIFY_AD_LIBRARY_COUNTRY ?? "").trim().toUpperCase();
     const country =
-      countryFromEnv || (countries[0] ? String(countries[0]).toUpperCase() : "") || "US";
+      fromParam ||
+      countryFromEnv ||
+      (countries[0] ? String(countries[0]).toUpperCase() : "") ||
+      "US";
     const kwForRun = params.apifyQuickFill
       ? keywords.slice(0, Math.min(3, Math.max(1, keywords.length)))
       : keywords;
@@ -261,6 +281,7 @@ export async function mineAdLibraryDaily(params: {
         keywords: kwForRun,
         apifyCount,
         country: country || "US",
+        adLibraryUrlMedia: params.adLibraryUrlMedia,
         waitSecs: ws,
         minDupInCatalogOverride,
       });
@@ -277,6 +298,7 @@ export async function mineAdLibraryDaily(params: {
       keywords: kwForRun,
       apifyCount,
       country: country || "US",
+      adLibraryUrlMedia: params.adLibraryUrlMedia,
     });
   }
 
@@ -292,6 +314,7 @@ export async function mineAdLibraryDaily(params: {
   /** Quantas keywords/páginas distintas trouxeram o mesmo id (proxy de “mais escalado” / mais presença). */
   const presenceHits = new Map<string, number>();
   const errors: string[] = [];
+  const graphCountry = (countries[0] ? String(countries[0]) : "").trim().toUpperCase() || null;
 
   for (const kw of keywords) {
     if (byId.size >= maxAds) break;
@@ -306,7 +329,7 @@ export async function mineAdLibraryDaily(params: {
           mediaType,
         });
         for (const raw of data) {
-          const row = mapRow(raw);
+          const row = mapRow(raw, graphCountry);
           if (row) {
             presenceHits.set(row.facebook_ad_id, (presenceHits.get(row.facebook_ad_id) ?? 0) + 1);
             byId.set(row.facebook_ad_id, row);
@@ -335,5 +358,7 @@ export async function mineAdLibraryDaily(params: {
     })
     .sort((a, b) => b.views_week + b.active_days * 120 - (a.views_week + a.active_days * 120));
 
-  return { rows: rows.slice(0, maxAds), errors };
+  const videoOnly = isCatalogVideoOnlyDefault();
+  const out = videoOnly ? rows.filter((r) => Boolean(r.video_url)) : rows;
+  return { rows: out.slice(0, maxAds), errors };
 }
