@@ -42,8 +42,11 @@ function isRecoverableColumnError(msg: string): boolean {
   return /column|does not exist|schema cache|undefined column|Could not find/i.test(msg);
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function orderForSort(q: any, sort: SortMode, useScoreOrder: boolean) {
+function orderForSort<T extends { order: (column: string, opts: { ascending: boolean; nullsFirst?: boolean }) => T }>(
+  q: T,
+  sort: SortMode,
+  useScoreOrder: boolean
+): T {
   if (sort === "score" && !useScoreOrder) {
     return q.order("views_week", { ascending: false }).order("active_days", { ascending: false });
   }
@@ -75,8 +78,7 @@ export async function queryFeedAds(
     if (a.country && !p.country) continue;
     if (a.useTrendingFilter && !p.trendingOnly) continue;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let q: any = supabase.from("ads").select("*", { count: "exact" });
+    let q = supabase.from("ads").select("*", { count: "exact" });
     if (a.mineOr) {
       q = q.or(MINE_SOURCE_OR);
     }
@@ -118,8 +120,7 @@ export async function countFeedVisibleAds(
   let lastErr = "";
   for (const a of COUNT_ATTEMPTS) {
     if (a.country && !opts?.country) continue;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let q: any = supabase.from("ads").select("id", { count: "exact", head: true });
+    let q = supabase.from("ads").select("id", { count: "exact", head: true });
     if (a.mineOr) {
       q = q.or(MINE_SOURCE_OR);
     }
