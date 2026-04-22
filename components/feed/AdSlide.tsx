@@ -25,14 +25,18 @@ type Props = {
   vslLayout: "split" | "modal";
   onFavorite: () => void;
   onVslExpand?: () => void;
+  /** Após o servidor rebuscar `video_url` e atualizar a linha. */
+  onAdPatched?: (ad: AdRow) => void;
 };
 
-export function AdSlide({ ad, active, preload, favorited, vslLayout, onFavorite, onVslExpand }: Props) {
+export function AdSlide({ ad, active, preload, favorited, vslLayout, onFavorite, onVslExpand, onAdPatched }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const vslVideoRef = useRef<HTMLVideoElement>(null);
   const [muted, setMuted] = useState(true);
   const [sheet, setSheet] = useState<"creative" | "vsl" | null>(null);
   const [vslModal, setVslModal] = useState(false);
+  const [resolving, setResolving] = useState(false);
+  const [resolveError, setResolveError] = useState<string | null>(null);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -55,6 +59,7 @@ export function AdSlide({ ad, active, preload, favorited, vslLayout, onFavorite,
   }, [active, vslLayout, ad.vsl_url]);
 
   const creative: string | undefined = getCreativeVideoSrc(ad) ?? undefined;
+  const previewThumb = getCreativeThumbSrc(ad);
   const vsl = ad.vsl_url;
   const vslIsVideo = isDirectVideoUrl(vsl);
   const vslIsPage = isLikelyEmbeddablePage(vsl) && !vslIsVideo;
@@ -88,6 +93,24 @@ export function AdSlide({ ad, active, preload, favorited, vslLayout, onFavorite,
     (vslIsVideo || vslIsPage) &&
     !hideDuplicateVslSplit(ad);
 
+  async function tryResolveVideoInApp() {
+    setResolveError(null);
+    setResolving(true);
+    try {
+      const r = await fetch(`/api/ads/${encodeURIComponent(ad.id)}/resolve-creative`, { method: "POST" });
+      const j = (await r.json()) as { ad?: AdRow; error?: string; detail?: string };
+      if (!r.ok) {
+        setResolveError([j.error, j.detail].filter(Boolean).join(" — ") || "Pedido falhou");
+        return;
+      }
+      if (j.ad) onAdPatched?.(j.ad);
+    } catch {
+      setResolveError("Falha de rede ao atualizar o vídeo.");
+    } finally {
+      setResolving(false);
+    }
+  }
+
   return (
     <section className="feed-item h-full min-h-0 w-full max-w-6xl mx-auto relative bg-black flex flex-col">
       <div className={showSplitVsl ? "h-[48dvh] min-h-0 shrink-0" : "flex-1 min-h-0"}>
@@ -104,41 +127,66 @@ export function AdSlide({ ad, active, preload, favorited, vslLayout, onFavorite,
             controls={false}
           />
         ) : (
-          <div className="h-full w-full min-h-[40dvh] flex flex-col items-center justify-center gap-4 px-4 text-center bg-zinc-950/90">
-            <p className="text-sm text-zinc-400 max-w-sm">
-              Sem ficheiro de vídeo no catálogo (mineração pode não ter devolvido URL). Abre o anúncio na Facebook ou o site da
-              oferta.
-            </p>
-            <div className="flex flex-col sm:flex-row flex-wrap gap-2 justify-center w-full max-w-md">
-              {fbAdLibraryUrl && (
-                <a
-                  href={fbAdLibraryUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded-full bg-indigo-600 hover:bg-indigo-500 px-4 py-2.5 text-sm font-medium text-white"
-                >
-                  Ver anúncio na Biblioteca
-                </a>
-              )}
-              {offerSiteUrl && (
-                <a
-                  href={offerSiteUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded-full border border-zinc-600 hover:border-zinc-500 px-4 py-2.5 text-sm text-zinc-100"
-                >
-                  Abrir site da oferta
-                </a>
-              )}
-              {ad.ad_copy && (
+          <div className="relative h-full w-full min-h-[40dvh] flex flex-col items-center justify-center gap-4 px-4 text-center bg-zinc-950/90">
+            {previewThumb && (
+              <div className="absolute inset-0 z-0">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={previewThumb}
+                  alt=""
+                  className="h-full w-full object-contain object-center opacity-40"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-zinc-950/80" />
+              </div>
+            )}
+            <div className="relative z-10 flex flex-col items-center gap-3 max-w-md">
+              <p className="text-sm text-zinc-200 font-medium">Vídeo do criativo ainda não veio da mineração</p>
+              <p className="text-xs text-zinc-400">
+                Tenta rebuscar o ficheiro na Ad Library (servidor) para ver e descarregar aqui. Ainda podes abrir o anúncio
+                original na Facebook.
+              </p>
+              {resolveError && <p className="text-xs text-amber-300/95 whitespace-pre-line">{resolveError}</p>}
+              {ad.facebook_ad_id && (
                 <button
                   type="button"
-                  onClick={() => void copyCopy()}
-                  className="rounded-full border border-zinc-600 hover:border-zinc-500 px-4 py-2.5 text-sm text-zinc-200"
+                  disabled={resolving}
+                  onClick={() => void tryResolveVideoInApp()}
+                  className="rounded-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 px-5 py-2.5 text-sm font-medium text-white"
                 >
-                  Copiar descrição
+                  {resolving ? "A obter vídeo…" : "Tentar obter vídeo no app"}
                 </button>
               )}
+              <div className="flex flex-col sm:flex-row flex-wrap gap-2 justify-center w-full">
+                {fbAdLibraryUrl && (
+                  <a
+                    href={fbAdLibraryUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-full bg-indigo-600 hover:bg-indigo-500 px-4 py-2.5 text-sm font-medium text-white"
+                  >
+                    Ver anúncio na Biblioteca
+                  </a>
+                )}
+                {offerSiteUrl && (
+                  <a
+                    href={offerSiteUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-full border border-zinc-600 hover:border-zinc-500 px-4 py-2.5 text-sm text-zinc-100"
+                  >
+                    Abrir site da oferta
+                  </a>
+                )}
+                {ad.ad_copy && (
+                  <button
+                    type="button"
+                    onClick={() => void copyCopy()}
+                    className="rounded-full border border-zinc-600 hover:border-zinc-500 px-4 py-2.5 text-sm text-zinc-200"
+                  >
+                    Copiar descrição
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}

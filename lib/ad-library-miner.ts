@@ -88,7 +88,7 @@ function extractBodies(raw: Record<string, unknown>): string {
   return "";
 }
 
-function extractVideoUrl(raw: Record<string, unknown>): string | null {
+export function extractVideoUrl(raw: Record<string, unknown>): string | null {
   const v = raw.ad_creative_videos;
   if (Array.isArray(v) && v.length > 0 && typeof v[0] === "object" && v[0]) {
     const o = v[0] as Record<string, unknown>;
@@ -104,7 +104,7 @@ function extractVideoUrl(raw: Record<string, unknown>): string | null {
   return null;
 }
 
-function mapRow(raw: Record<string, unknown>, countryCode: string | null): MinedAdLibraryRow | null {
+export function mapRow(raw: Record<string, unknown>, countryCode: string | null): MinedAdLibraryRow | null {
   const id = raw.id != null ? String(raw.id) : "";
   if (!id) return null;
   const page = String(raw.page_name ?? "Anúncio Meta");
@@ -361,4 +361,62 @@ export async function mineAdLibraryDaily(params: {
   const videoOnly = isCatalogVideoOnlyDefault();
   const out = videoOnly ? rows.filter((r) => Boolean(r.video_url)) : rows;
   return { rows: out.slice(0, maxAds), errors };
+}
+
+const GRAPH_FIELDS_SINGLE = [
+  "id",
+  "page_name",
+  "ad_snapshot_url",
+  "ad_creative_bodies",
+  "ad_creative_videos",
+  "ad_creative_link_urls",
+  "ad_creation_time",
+  "ad_delivery_start_time",
+] as const;
+
+/**
+ * Tenta `GET /{ad_archive_id}` na Graph (mesmos campos da pesquisa). Nem todas as contas/IDs respondem; em falta use Apify.
+ */
+export async function fetchAdArchiveObjectFromGraph(
+  adArchiveId: string,
+  accessToken: string,
+  countries: string[]
+): Promise<{ data: Record<string, unknown> | null; error: string | null }> {
+  const id = adArchiveId.trim();
+  if (!/^\d+$/.test(id)) {
+    return { data: null, error: "facebook_ad_id inválido" };
+  }
+  const cc = countries.length
+    ? countries.map((c) => String(c).toUpperCase())
+    : ["US"];
+  const token = accessToken.replace(/^\uFEFF/, "").trim();
+  const tryFetch = (withCountries: boolean) => {
+    const u = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(id)}`);
+    u.searchParams.set("access_token", token);
+    u.searchParams.set("fields", GRAPH_FIELDS_SINGLE.join(","));
+    if (withCountries) {
+      u.searchParams.set("ad_reached_countries", JSON.stringify(cc));
+    }
+    return withAppSecretProof(u.toString(), accessToken);
+  };
+  for (const withC of [true, false]) {
+    const res = await fetch(tryFetch(withC));
+    const json = (await res.json()) as {
+      id?: string;
+      error?: { message?: string; code?: number; type?: string };
+    };
+    if (json.id) {
+      return { data: json as Record<string, unknown>, error: null };
+    }
+    if (withC && json.error) {
+      continue;
+    }
+    if (json.error) {
+      return {
+        data: null,
+        error: json.error.message ?? `Graph ${res.status}`,
+      };
+    }
+  }
+  return { data: null, error: "Resposta vazia da Graph" };
 }

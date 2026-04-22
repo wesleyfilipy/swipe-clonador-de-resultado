@@ -616,6 +616,7 @@ export function FeedShell({ email, initialAds = [], initialHasMore = true }: Pro
                 favorited={favorites.has(ad.id)}
                 vslLayout={vslLayout}
                 onFavorite={() => void toggleFavorite(ad.id)}
+                onAdPatched={(a) => setAds((prev) => prev.map((x) => (x.id === a.id ? a : x)))}
               />
             </div>
           ))}

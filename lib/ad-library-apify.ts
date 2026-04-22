@@ -61,7 +61,8 @@ function firstNonSearchLanding(...cands: unknown[]): string | null {
   return null;
 }
 
-function adLibraryIdUrl(adArchiveId: string): string {
+/** Página de detalhe de um anúncio na Ad Library (útil para Apify / “atualizar vídeo”). */
+export function adLibraryIdUrl(adArchiveId: string): string {
   return `https://www.facebook.com/ads/library/?id=${encodeURIComponent(adArchiveId)}`;
 }
 
@@ -489,10 +490,23 @@ export type MineFromApifyParams = {
 /**
  * Roda o actor e devolve itens brutos do dataset (feed semanal / pipelines custom).
  */
+/**
+ * Converte um item bruto do dataset Apify numa linha do catálogo (duplicatas=1; só precisamos de URLs de media).
+ */
+export function minedRowFromApifyItem(
+  raw: Record<string, unknown>,
+  countryCode: string
+): MinedAdLibraryRow | null {
+  return mapItemToRow(raw, { duplicateSize: 1, winner: true, scaled: true, countryCode });
+}
+
 export async function fetchApifyAdLibraryItems(p: {
   apifyToken: string;
   country: string;
-  keywords: readonly string[];
+  /** Usado para pesquisas por keyword; omita se passar `libraryPageUrls`. */
+  keywords?: readonly string[];
+  /** URLs directas (ex. `?id=` de um anúncio) — prioridade sobre `keywords`. */
+  libraryPageUrls?: readonly string[];
   count: number;
   waitSecs?: number;
   adLibraryUrlMedia?: "video" | "all";
@@ -505,9 +519,15 @@ export async function fetchApifyAdLibraryItems(p: {
   const errors: string[] = [];
   const client = new ApifyClient({ token: p.apifyToken });
   const media = resolveApifyAdLibraryUrlMedia(p.adLibraryUrlMedia);
-  const urls = buildAdLibraryUsKeywordUrls(p.keywords, p.country, media);
+  const direct =
+    p.libraryPageUrls && p.libraryPageUrls.length > 0
+      ? p.libraryPageUrls.map((u) => ({ url: u.trim() })).filter((x) => x.url.length > 0)
+      : null;
+  const urls = direct?.length
+    ? direct
+    : buildAdLibraryUsKeywordUrls(p.keywords ?? [], p.country, media);
   if (urls.length === 0) {
-    return { items: [], errors: ["Nenhuma keyword para o Apify."], runId: "", defaultDatasetId: "" };
+    return { items: [], errors: ["Nenhuma keyword ou URL para o Apify."], runId: "", defaultDatasetId: "" };
   }
   const input: Record<string, string | number | { url: string }[]> = {
     urls,
