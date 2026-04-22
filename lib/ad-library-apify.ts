@@ -19,6 +19,52 @@ function pickNicheFromText(text: string): string {
 
 const APIFY_ACTOR = "curious_coder/facebook-ads-library-scraper";
 
+/** URL da *pesquisa* na Ad Library (q=, search_type=…), que o actor às vezes cola em `item.url` — inútil como criativo ou landing. */
+export function isAdLibraryKeywordSearchUrl(url: string | null | undefined): boolean {
+  if (!url || typeof url !== "string") return false;
+  try {
+    const u = new URL(url.trim());
+    if (!/^(www\.)?facebook\.com$/i.test(u.hostname)) return false;
+    if (!u.pathname.toLowerCase().includes("/ads/library")) return false;
+    if (u.searchParams.get("id") && /^\d+$/.test(String(u.searchParams.get("id")))) return false;
+    if (u.searchParams.get("view_all_page_id") && u.searchParams.get("view_all_page_id")!.length > 0) {
+      return false;
+    }
+    const st = u.searchParams.get("search_type");
+    const hasQ = u.searchParams.get("q") != null && String(u.searchParams.get("q")).length > 0;
+    if (st === "keyword_unordered" || st === "keyword_ordered" || st === "keyword" || hasQ) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+function firstCardRecord(item: Record<string, unknown>): Record<string, unknown> | null {
+  const a = item.cards;
+  if (Array.isArray(a) && a[0] && typeof a[0] === "object" && !Array.isArray(a[0])) {
+    return a[0] as Record<string, unknown>;
+  }
+  const b = item.adCards;
+  if (Array.isArray(b) && b[0] && typeof b[0] === "object" && !Array.isArray(b[0])) {
+    return b[0] as Record<string, unknown>;
+  }
+  return asRecord(item.card) ?? asRecord((item as { adCard?: unknown }).adCard);
+}
+
+function firstNonSearchLanding(...cands: unknown[]): string | null {
+  for (const c of cands) {
+    const s = firstNonEmptyString(c);
+    if (s && !isAdLibraryKeywordSearchUrl(s)) return s;
+  }
+  return null;
+}
+
+function adLibraryIdUrl(adArchiveId: string): string {
+  return `https://www.facebook.com/ads/library/?id=${encodeURIComponent(adArchiveId)}`;
+}
+
 export function getApifyAdLibraryTokenFromEnv(): string {
   return (process.env.APIFY_TOKEN ?? process.env.APIFY_API_TOKEN ?? "").replace(/^\uFEFF/, "").trim();
 }
@@ -88,34 +134,79 @@ export function pickStartIso(item: Record<string, unknown>): string | null {
 
 export function pickLinkOrVideo(item: Record<string, unknown>): { video: string | null; landing: string | null; thumb: string | null } {
   const c = asRecord(item.creative);
+  const card = firstCardRecord(item);
+  const cc = card ? asRecord(card.creative) : null;
   const image =
     firstNonEmptyString(
       c?.imageUrl,
       c?.image_url,
       c?.originalImageUrl,
+      c?.thumbnail,
       item.imageUrl,
       item.image_url,
       item.thumbnailUrl,
-      item.thumbnail_url
+      item.thumbnail_url,
+      item.image,
+      item.resizedImageUrl,
+      item.snapshotThumbnailUrl,
+      item.snapshot_thumbnail,
+      item.snapshotUrl,
+      card?.imageUrl,
+      card?.image_url,
+      card?.thumbnail,
+      card?.resizedImageUrl,
+      (card as { originalImageUrl?: string })?.originalImageUrl,
+      (item as { originalImageUrl?: string }).originalImageUrl,
+      cc?.imageUrl,
+      cc?.image_url
     ) || null;
-  const video = firstNonEmptyString(
-    c?.videoUrl,
-    c?.video_url,
-    item.videoUrl,
-    item.video_url,
-    item.video
-  ) || null;
-  const link =
+  let video =
     firstNonEmptyString(
-      c?.linkUrl,
-      c?.link_url,
-      item.linkUrl,
-      item.link_url,
-      item.landingPageUrl,
-      item.ctaUrl,
-      item.url
+      c?.videoUrl,
+      c?.video_url,
+      item.videoUrl,
+      item.video_url,
+      item.video,
+      item.playableUrl,
+      item.playable_url,
+      item.playable,
+      item.videoSDUrl,
+      item.videoHDUrl,
+      item.video_sd_url,
+      item.video_hd_url,
+      item.permalink_url,
+      item.permalink,
+      (item as { videoUhdUrl?: string }).videoUhdUrl,
+      card?.videoUrl,
+      card?.video_url,
+      (card as { video?: string })?.video,
+      (card as { playbackUrl?: string })?.playbackUrl,
+      (card as { hdUrl?: string })?.hdUrl,
+      (card as { sdUrl?: string })?.sdUrl,
+      cc?.videoUrl,
+      cc?.video_url
     ) || null;
-  return { video, landing: link, thumb: image };
+  if (video && isAdLibraryKeywordSearchUrl(video)) video = null;
+  const link = firstNonSearchLanding(
+    c?.linkUrl,
+    c?.link_url,
+    item.linkUrl,
+    item.link_url,
+    item.landingPageUrl,
+    item.landing_page_url,
+    item.landing,
+    (item as { website?: string }).website,
+    (item as { ctaUrl?: string }).ctaUrl,
+    (item as { cta_url?: string }).cta_url,
+    (item as { callToActionUrl?: string }).callToActionUrl,
+    item.ctaUrl,
+    card?.linkUrl,
+    card?.link_url,
+    (card as { website?: string })?.website,
+    (card as { link?: string })?.link,
+    item.url
+  );
+  return { video, landing: link, thumb: image || null };
 }
 
 export function pickSnapshotUrl(item: Record<string, unknown>): string | null {
@@ -179,7 +270,8 @@ function mapItemToRow(
   const copy = pickCopy(raw);
   const start = pickStartIso(raw);
   const days = daysSinceStart(start);
-  const snap = pickSnapshotUrl(raw);
+  let snap = pickSnapshotUrl(raw);
+  if (snap && isAdLibraryKeywordSearchUrl(snap)) snap = null;
   const { video, landing, thumb } = pickLinkOrVideo(raw);
 
   const baseWeek = Math.min(500_000, days * 900 + (id.length * 17) % 4_000);
@@ -193,7 +285,8 @@ function mapItemToRow(
     title: page.slice(0, 240),
     niche: pickNicheFromText(`${copy} ${page}`),
     video_url: video,
-    vsl_url: video ?? snap ?? landing,
+    /** Nunca a URL de pesquisa (q=+keyword); se não houver criativo, fallback para a página *deste* anúncio na Ad Library. */
+    vsl_url: video ?? snap ?? landing ?? adLibraryIdUrl(id),
     thumbnail: thumb,
     ad_copy: copy.slice(0, 8000) || null,
     views_day,
