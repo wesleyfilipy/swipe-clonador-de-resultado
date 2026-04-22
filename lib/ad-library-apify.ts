@@ -272,7 +272,16 @@ function mapItemToRow(
   const days = daysSinceStart(start);
   let snap = pickSnapshotUrl(raw);
   if (snap && isAdLibraryKeywordSearchUrl(snap)) snap = null;
-  const { video, landing, thumb } = pickLinkOrVideo(raw);
+  const picked = pickLinkOrVideo(raw);
+  let { video, landing, thumb } = picked;
+  if (!video) {
+    const d = deepFindMediaUrl(raw, isLikelyVideoCdnUrl);
+    if (d) video = d;
+  }
+  if (!thumb) {
+    const t = deepFindMediaUrl(raw, isLikelyThumbCdnUrl);
+    if (t) thumb = t;
+  }
   let landingHost: string | null = null;
   if (landing && !isAdLibraryKeywordSearchUrl(landing)) {
     try {
@@ -317,6 +326,101 @@ function defaultDupGroupMinSize(): number {
   return Number.isFinite(n) && n > 1 ? Math.floor(n) : 3;
 }
 
+/** Só entram no catálogo anúncios com >= N duplicatas (lote do Apify e/ou contagem reportada pela Meta, quando existir). Padrão 50. */
+function defaultMinDupForCatalog(): number {
+  const n = Number(process.env.AD_LIBRARY_MIN_DUP_IN_CATALOG ?? "50");
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 50;
+}
+
+function catalogRequireScaledOnly(): boolean {
+  const v = (process.env.AD_LIBRARY_CATALOG_REQUIRE_SCALED ?? "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
+function catalogRequireVideoOrThumb(): boolean {
+  const v = (process.env.AD_LIBRARY_CATALOG_REQUIRE_MEDIA ?? "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
+/**
+ * A Meta/Apify às vezes expõe quantas entradas repetem o mesmo criativo.
+ * O nosso `duplicateGroupKey` também conta linhas do dataset com o mesmo thumb/snapshot.
+ */
+function pickReportedLibraryDupCount(item: Record<string, unknown>): number {
+  const keys = [
+    "collationCount",
+    "collation_count",
+    "duplicateCount",
+    "duplicate_count",
+    "totalAdCount",
+    "total_ad_count",
+    "adCount",
+    "ad_count",
+    "numberOfAds",
+    "number_of_ads",
+    "adsWithSameCreative",
+    "ads_with_same_creative",
+    "adCardsCount",
+    "ad_cards_count",
+  ] as const;
+  let best = 0;
+  for (const k of keys) {
+    const v = item[k as keyof typeof item] as unknown;
+    if (typeof v === "number" && v > 0) best = Math.max(best, Math.floor(v));
+    else if (typeof v === "string" && /^\d+$/.test(v)) best = Math.max(best, parseInt(v, 10));
+  }
+  return best;
+}
+
+const DEEP_MAX_NODES = 180;
+
+function isLikelyVideoCdnUrl(s: string): boolean {
+  if (!/^https?:\/\//i.test(s) || s.length > 4_000) return false;
+  if (!/fbcdn|facebook|fbsbx/i.test(s)) return false;
+  if (/search_type=keyword|\/ads\/library\?.*&q=/i.test(s)) return false;
+  return (
+    /\/v\/|video|\.mp4|m3u8|\.mov|\.webm|t\d+\.\d+-\d+/i.test(s) || (s.includes("fbcdn.net") && !/\.(jpe?g|png|gif|webp)(\?|$)/i.test(s))
+  );
+}
+
+function isLikelyThumbCdnUrl(s: string): boolean {
+  if (!/^https?:\/\//i.test(s) || s.length > 4_000) return false;
+  if (!/fbcdn|scontent|facebook|fbsbx|cdninstagram/i.test(s)) return false;
+  if (/search_type=keyword/i.test(s)) return false;
+  return /\.(jpe?g|png|gif|webp)(\?|$)/i.test(s) || (s.includes("scontent") && /safe_image|_n\.jpg|pic\.php/i.test(s));
+}
+
+/** Campos aninhados (cards, raw, body) muitas vezes têm o URL do vídeo onde os getters diretos falham. */
+function deepFindMediaUrl(
+  root: unknown,
+  pick: (s: string) => boolean
+): string | null {
+  let seen = 0;
+  const visit = (x: unknown, depth: number): string | null => {
+    if (seen > DEEP_MAX_NODES || depth < 0) return null;
+    if (x == null) return null;
+    if (typeof x === "string" && x.length > 12 && x.startsWith("http") && pick(x)) {
+      return x;
+    }
+    if (typeof x !== "object") return null;
+    if (Array.isArray(x)) {
+      for (const el of x) {
+        seen += 1;
+        const f = visit(el, depth - 1);
+        if (f) return f;
+      }
+      return null;
+    }
+    for (const v of Object.values(x as object)) {
+      seen += 1;
+      const f = visit(v, depth - 1);
+      if (f) return f;
+    }
+    return null;
+  };
+  return visit(root, 6);
+}
+
 export async function listAllApifyDatasetItems(
   client: ApifyClient,
   datasetId: string
@@ -348,6 +452,11 @@ export type MineFromApifyParams = {
   country: string;
   /** Sobrescreve o tempo máximo de espera da run do actor (preenchimento rápido no /feed). */
   waitSecs?: number;
+  /**
+   * Mínimo de duplicatas para entrar no catálogo (só o Apify, sem gravar 50+).
+   * Ex.: preenchimento rápido do /feed passa 1; crons usam `AD_LIBRARY_MIN_DUP_IN_CATALOG` (padrão 50).
+   */
+  minDupInCatalogOverride?: number;
 };
 
 /**
@@ -414,6 +523,12 @@ export async function mineFromApify(
 ): Promise<{ rows: MinedAdLibraryRow[]; errors: string[] }> {
   const minDup = defaultDupGroupMinSize();
   const minDays = defaultScaledMinDays();
+  const minCat =
+    p.minDupInCatalogOverride != null
+      ? Math.max(1, Math.floor(p.minDupInCatalogOverride))
+      : defaultMinDupForCatalog();
+  const requireScaled = catalogRequireScaledOnly();
+  const requireMedia = catalogRequireVideoOrThumb();
   const { items, errors } = await fetchApifyAdLibraryItems({
     apifyToken: p.apifyToken,
     country: p.country,
@@ -456,15 +571,25 @@ export async function mineFromApify(
     const k = duplicateGroupKey(raw);
     const group = byKey.get(k) ?? [raw];
     const dupSize = group.length;
+    const reported = pickReportedLibraryDupCount(raw);
+    const effectiveDups = Math.max(dupSize, reported);
+    if (effectiveDups < minCat) {
+      continue;
+    }
     const start = pickStartIso(raw);
     const scaled = isScaledAd(start, minDays);
+    if (requireScaled && !scaled) {
+      continue;
+    }
     const strong = isStrongDupBySize(dupSize, minDup);
     const winner = strong && scaled;
-    const row = mapItemToRow(raw, { duplicateSize: dupSize, winner, scaled });
-    if (row) {
-      seenId.add(id);
-      rows.push(row);
+    const row = mapItemToRow(raw, { duplicateSize: effectiveDups, winner, scaled });
+    if (!row) continue;
+    if (requireMedia && !row.video_url && !row.thumbnail) {
+      continue;
     }
+    seenId.add(id);
+    rows.push(row);
   }
 
   return { rows, errors };

@@ -552,10 +552,10 @@ export function FeedShell({ email, initialAds = [], initialHasMore = true }: Pro
                     <>
                       <p className="font-semibold text-lg text-amber-100/95">Ainda sem anúncios no feed</p>
                       <p className="text-sm text-zinc-400 leading-relaxed">
-                        Costuma faltar <strong className="text-zinc-300">APIFY_TOKEN</strong> (ou token inválido), ou o plano/limite
-                        do Apify. Confira o cron{" "}
-                        <code className="text-xs text-zinc-500">/api/cron/scheduled</code> (e variáveis na Vercel) para o catálogo
-                        encher em background.
+                        Costuma faltar <strong className="text-zinc-300">APIFY_TOKEN</strong>, o limite do Apify, ou o filtro{" "}
+                        <strong className="text-zinc-300">AD_LIBRARY_MIN_DUP_IN_CATALOG</strong> (p.ex. 50) está a eliminar tudo
+                        até a mineração trazer muitas entradas repetidas — baixe o número nessa variável se precisar de teste, ou
+                        suba <code className="text-xs">APIFY_AD_LIBRARY_COUNT</code>.
                       </p>
                     </>
                   )}

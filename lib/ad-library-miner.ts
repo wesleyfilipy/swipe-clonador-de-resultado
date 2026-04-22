@@ -253,6 +253,8 @@ export async function mineAdLibraryDaily(params: {
       const qc = Number(process.env.FEED_QUICK_APIFY_COUNT ?? "64");
       const apifyCount = Math.min(200, Math.max(24, Number.isFinite(qc) && qc > 0 ? Math.floor(qc) : 64));
       const ws = Math.min(110, Math.max(50, Number(process.env.FEED_QUICK_WAIT_SECS ?? "95")));
+      const qMin = Number(process.env.FEED_QUICK_MIN_DUP_IN_CATALOG ?? "1");
+      const minDupInCatalogOverride = Number.isFinite(qMin) && qMin >= 1 ? Math.floor(qMin) : 1;
       return mineFromApify({
         apifyToken: apify,
         maxAds,
@@ -260,6 +262,7 @@ export async function mineAdLibraryDaily(params: {
         apifyCount,
         country: country || "US",
         waitSecs: ws,
+        minDupInCatalogOverride,
       });
     }
 
