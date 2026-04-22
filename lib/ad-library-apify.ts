@@ -2,6 +2,8 @@
  * Coleta via Apify: actor curious_coder/facebook-ads-library-scraper.
  * Não exige token Meta; exige APIFY_TOKEN (ou APIFY_API_TOKEN).
  */
+// Apify SDK faz require dinâmico a `proxy-agent` em `http_client.js` — o trace da Vercel/Next não a seguia. Import explícito força a cópia para /var/task.
+import "proxy-agent";
 import { ApifyClient } from "apify-client";
 import type { MinedAdLibraryRow } from "@/lib/ad-library-miner";
 
