@@ -2,7 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { AdRow } from "@/types/database";
-import { isDirectVideoUrl, isLikelyEmbeddablePage } from "@/lib/media";
+import {
+  isDirectVideoUrl,
+  isLikelyEmbeddablePage,
+  toMediaProxyUrl,
+  isEmbeddableInIframe,
+} from "@/lib/media";
 import { TranscriptionSheet } from "./TranscriptionSheet";
 
 type Props = {
@@ -42,10 +47,13 @@ export function AdSlide({ ad, active, preload, favorited, vslLayout, onFavorite,
     }
   }, [active, vslLayout, ad.vsl_url]);
 
-  const creative = ad.video_url;
+  const creative: string | undefined = (toMediaProxyUrl(ad.video_url) ?? ad.video_url) || undefined;
   const vsl = ad.vsl_url;
   const vslIsVideo = isDirectVideoUrl(vsl);
   const vslIsPage = isLikelyEmbeddablePage(vsl) && !vslIsVideo;
+  const vslPlayback: string | undefined = (toMediaProxyUrl(vsl) ?? vsl) || undefined;
+  const vslInIframe = Boolean(vsl && vslIsPage && isEmbeddableInIframe(vsl));
+  const vslPageButNoIframe = Boolean(vsl && vslIsPage && !vslInIframe);
 
   function downloadUrl(url: string | null | undefined, name: string) {
     if (!url) return;
@@ -71,7 +79,7 @@ export function AdSlide({ ad, active, preload, favorited, vslLayout, onFavorite,
             ref={videoRef}
             className="h-full w-full object-cover bg-black"
             src={creative}
-            poster={ad.thumbnail ?? undefined}
+            poster={toMediaProxyUrl(ad.thumbnail) ?? ad.thumbnail ?? undefined}
             playsInline
             loop
             muted={muted}
@@ -89,13 +97,13 @@ export function AdSlide({ ad, active, preload, favorited, vslLayout, onFavorite,
             <video
               ref={vslVideoRef}
               className="h-full w-full object-contain bg-black"
-              src={vsl}
+              src={vslPlayback}
               playsInline
               controls
               muted={false}
               preload={preload ? "auto" : "metadata"}
             />
-          ) : vslIsPage && vsl ? (
+          ) : vslInIframe && vsl ? (
             <iframe
               title="VSL"
               src={vsl}
@@ -103,6 +111,21 @@ export function AdSlide({ ad, active, preload, favorited, vslLayout, onFavorite,
               sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
               loading={preload ? "eager" : "lazy"}
             />
+          ) : vslPageButNoIframe && vsl ? (
+            <div className="h-full w-full flex flex-col items-center justify-center gap-3 px-6 text-center bg-zinc-950">
+              <p className="text-sm text-zinc-400 max-w-sm">
+                Este site (ex.: Facebook / Instagram) não permite ver a página dentro do app — bloqueio de iframe
+                (X-Frame-Options).
+              </p>
+              <a
+                href={vsl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-full bg-indigo-600 hover:bg-indigo-500 px-4 py-2 text-sm font-medium text-white"
+              >
+                Abrir em nova aba
+              </a>
+            </div>
           ) : null}
         </div>
       )}
@@ -133,14 +156,26 @@ export function AdSlide({ ad, active, preload, favorited, vslLayout, onFavorite,
           </div>
           <div className="flex-1 min-h-0" onClick={(e) => e.stopPropagation()}>
             {vslIsVideo ? (
-              <video src={vsl} className="h-full w-full object-contain" playsInline controls autoPlay />
-            ) : (
+              <video src={vslPlayback} className="h-full w-full object-contain" playsInline controls autoPlay />
+            ) : vslInIframe ? (
               <iframe
                 title="VSL modal"
                 src={vsl}
                 className="h-full w-full border-0 bg-white"
                 sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
               />
+            ) : (
+              <div className="h-full w-full flex flex-col items-center justify-center gap-3 text-zinc-400 p-6">
+                <p className="text-sm text-center">Incorporação bloqueada pelo site de destino.</p>
+                <a
+                  href={vsl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-indigo-400 hover:underline"
+                >
+                  Abrir em nova aba
+                </a>
+              </div>
             )}
           </div>
         </div>

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { canProxyInBrowser, FACEBOOK_LIKE_REFERER } from "@/lib/media";
 
 const MAX_BYTES = 80 * 1024 * 1024;
 
@@ -29,7 +30,17 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "URL inválida" }, { status: 400 });
   }
 
-  const upstream = await fetch(target.toString(), { redirect: "follow" });
+  const metaLike = canProxyInBrowser(target.toString());
+  const upstream = await fetch(target.toString(), {
+    redirect: "follow",
+    headers: metaLike
+      ? {
+          Referer: FACEBOOK_LIKE_REFERER,
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        }
+      : undefined,
+  });
   if (!upstream.ok || !upstream.body) {
     return NextResponse.json({ error: "Falha ao buscar arquivo" }, { status: 502 });
   }

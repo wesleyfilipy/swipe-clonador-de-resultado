@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useBrowserSupabase } from "@/components/supabase/BrowserSupabaseProvider";
+import { toMediaProxyUrl } from "@/lib/media";
 import type { AdRow, SortMode } from "@/types/database";
 import { AdSlide } from "./AdSlide";
 
@@ -423,7 +424,7 @@ export function FeedShell({ email, initialAds = [], initialHasMore = true }: Pro
             className="max-w-6xl mx-auto flex gap-2.5 overflow-x-auto no-scrollbar px-3 pb-3 pt-1 snap-x snap-mandatory scroll-smooth"
           >
             {ads.map((ad, i) => {
-              const poster = ad.thumbnail ?? undefined;
+              const poster = toMediaProxyUrl(ad.thumbnail) ?? ad.thumbnail ?? undefined;
               return (
                 <button
                   key={ad.id}
