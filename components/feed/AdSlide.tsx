@@ -69,6 +69,13 @@ export function AdSlide({ ad, active, preload, favorited, vslLayout, onFavorite,
     await navigator.clipboard.writeText(ad.ad_copy);
   }
 
+  const fbAdLibraryUrl = ad.facebook_ad_id
+    ? `https://www.facebook.com/ads/library/?id=${encodeURIComponent(ad.facebook_ad_id)}`
+    : null;
+  const offerSiteUrl = ad.landing_domain?.trim()
+    ? `https://${ad.landing_domain.replace(/^https?:\/\//i, "").split("/")[0]}`
+    : null;
+
   const showSplitVsl = vslLayout === "split" && (vslIsVideo || vslIsPage);
 
   return (
@@ -87,7 +94,43 @@ export function AdSlide({ ad, active, preload, favorited, vslLayout, onFavorite,
             controls={false}
           />
         ) : (
-          <div className="h-full w-full flex items-center justify-center text-zinc-500 text-sm">Sem vídeo do criativo</div>
+          <div className="h-full w-full min-h-[40dvh] flex flex-col items-center justify-center gap-4 px-4 text-center bg-zinc-950/90">
+            <p className="text-sm text-zinc-400 max-w-sm">
+              Sem ficheiro de vídeo no catálogo (mineração pode não ter devolvido URL). Abre o anúncio na Facebook ou o site da
+              oferta.
+            </p>
+            <div className="flex flex-col sm:flex-row flex-wrap gap-2 justify-center w-full max-w-md">
+              {fbAdLibraryUrl && (
+                <a
+                  href={fbAdLibraryUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-full bg-indigo-600 hover:bg-indigo-500 px-4 py-2.5 text-sm font-medium text-white"
+                >
+                  Ver anúncio na Biblioteca
+                </a>
+              )}
+              {offerSiteUrl && (
+                <a
+                  href={offerSiteUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-full border border-zinc-600 hover:border-zinc-500 px-4 py-2.5 text-sm text-zinc-100"
+                >
+                  Abrir site da oferta
+                </a>
+              )}
+              {ad.ad_copy && (
+                <button
+                  type="button"
+                  onClick={() => void copyCopy()}
+                  className="rounded-full border border-zinc-600 hover:border-zinc-500 px-4 py-2.5 text-sm text-zinc-200"
+                >
+                  Copiar descrição
+                </button>
+              )}
+            </div>
+          </div>
         )}
       </div>
 
@@ -200,17 +243,35 @@ export function AdSlide({ ad, active, preload, favorited, vslLayout, onFavorite,
         />
         <IconButton
           label="Baixar criativo"
-          onClick={() => downloadUrl(creative, `${ad.title}-criativo.mp4`)}
+          onClick={() => downloadUrl(ad.video_url, `${ad.title}-criativo.mp4`)}
           icon={<span className="text-white">⬇</span>}
+          disabled={!ad.video_url}
         />
         <IconButton
           label="Baixar VSL"
           onClick={() =>
-            downloadUrl(vsl ?? null, vslIsVideo ? `${ad.title}-vsl.mp4` : `${ad.title}-vsl.html`)
+            downloadUrl(
+              ad.vsl_url,
+              vslIsVideo ? `${ad.title}-vsl.mp4` : `${ad.title}-vsl.html`
+            )
           }
           icon={<span className="text-white">⬇</span>}
-          disabled={!vsl}
+          disabled={!ad.vsl_url}
         />
+        {fbAdLibraryUrl && (
+          <IconButton
+            label="Ver na Facebook"
+            onClick={() => window.open(fbAdLibraryUrl, "_blank", "noopener,noreferrer")}
+            icon={<span className="text-white text-xs font-bold">f</span>}
+          />
+        )}
+        {offerSiteUrl && (
+          <IconButton
+            label="Site da oferta"
+            onClick={() => window.open(offerSiteUrl, "_blank", "noopener,noreferrer")}
+            icon={<span className="text-white">🌐</span>}
+          />
+        )}
         {vsl && !vslIsVideo && (
           <IconButton
             label="Abrir VSL (nova aba)"
@@ -230,6 +291,28 @@ export function AdSlide({ ad, active, preload, favorited, vslLayout, onFavorite,
           <Stat label="views/dia" value={ad.views_day.toLocaleString("pt-BR")} />
           <Stat label="views/sem" value={ad.views_week.toLocaleString("pt-BR")} />
           <Stat label="dias ativo" value={String(ad.active_days)} />
+        </div>
+        <div className="mt-1.5 flex flex-wrap gap-2 text-[10px]">
+          {fbAdLibraryUrl && (
+            <a
+              href={fbAdLibraryUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-indigo-400 hover:underline"
+            >
+              Facebook
+            </a>
+          )}
+          {offerSiteUrl && (
+            <a href={offerSiteUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-400/90 hover:underline">
+              Site
+            </a>
+          )}
+          {ad.landing_domain && (
+            <span className="text-zinc-500 truncate max-w-[140px]" title={ad.landing_domain}>
+              {ad.landing_domain}
+            </span>
+          )}
         </div>
         {ad.ad_copy && <p className="mt-2 text-xs text-zinc-300 line-clamp-3">{ad.ad_copy}</p>}
       </div>

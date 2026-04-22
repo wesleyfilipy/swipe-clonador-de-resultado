@@ -273,6 +273,14 @@ function mapItemToRow(
   let snap = pickSnapshotUrl(raw);
   if (snap && isAdLibraryKeywordSearchUrl(snap)) snap = null;
   const { video, landing, thumb } = pickLinkOrVideo(raw);
+  let landingHost: string | null = null;
+  if (landing && !isAdLibraryKeywordSearchUrl(landing)) {
+    try {
+      landingHost = new URL(landing).hostname.replace(/^www\./i, "") || null;
+    } catch {
+      landingHost = null;
+    }
+  }
 
   const baseWeek = Math.min(500_000, days * 900 + (id.length * 17) % 4_000);
   const dupBoost = Math.min(400_000, Math.max(0, ctx.duplicateSize - 1) * 12_000);
@@ -295,6 +303,7 @@ function mapItemToRow(
     facebook_ad_id: id,
     mine_source: "ad_library_daily",
     appearance_count: ctx.duplicateSize,
+    landing_domain: landingHost,
   };
 }
 

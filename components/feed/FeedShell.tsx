@@ -411,6 +411,41 @@ export function FeedShell({ email, initialAds = [], initialHasMore = true }: Pro
               VSL: {vslLayout === "split" ? "split" : "modal"}
             </button>
           </div>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-1 border-t border-white/5">
+            <p className="text-[10px] text-zinc-500 leading-snug">
+              <strong className="text-zinc-400">Nichos:</strong> a mineração muitas vezes grava tudo em <span className="text-zinc-300">geral</span>{" "}
+              — usa <span className="text-zinc-300">todos</span> ou <span className="text-zinc-300">geral</span> se um filtro
+              específico (ex. fitness) vier vazio.
+            </p>
+            <div className="flex flex-wrap gap-2 shrink-0">
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => {
+                  if (catalogFetchInFlight.current) return;
+                  catalogFetchInFlight.current = true;
+                  void fetchPage(true).finally(() => {
+                    catalogFetchInFlight.current = false;
+                  });
+                }}
+                className="rounded-lg border border-zinc-600 hover:border-zinc-500 px-3 py-1.5 text-[11px] text-zinc-200 disabled:opacity-50"
+              >
+                {loading ? "…" : "Atualizar feed"}
+              </button>
+              <button
+                type="button"
+                disabled={catalogKickBusy}
+                onClick={() => {
+                  setCatalogTimedOut(false);
+                  setPollNonce((n) => n + 1);
+                  void kickCatalogFill();
+                }}
+                className="rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-3 py-1.5 text-[11px] font-medium text-white"
+              >
+                {catalogKickBusy ? "A buscar…" : "Buscar novos (minera)"}
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -463,6 +498,15 @@ export function FeedShell({ email, initialAds = [], initialHasMore = true }: Pro
           onScroll={onScroll}
           className="feed-scroll flex-1 min-h-0 overflow-y-scroll snap-y snap-mandatory overscroll-y-contain scroll-smooth no-scrollbar"
         >
+          {loading && ads.length === 0 && (
+            <div className="min-h-[min(480px,70dvh)] flex flex-col items-center justify-center gap-4 px-6 text-zinc-400">
+              <div
+                className="h-10 w-10 border-2 border-indigo-500/25 border-t-indigo-400 rounded-full animate-spin"
+                aria-hidden
+              />
+              <p className="text-sm">A carregar o catálogo…</p>
+            </div>
+          )}
           {ads.map((ad, i) => (
             <div key={ad.id} className="snap-start snap-always shrink-0 h-full w-full box-border">
               <AdSlide
@@ -475,7 +519,7 @@ export function FeedShell({ email, initialAds = [], initialHasMore = true }: Pro
               />
             </div>
           ))}
-          {(loading || loadingMore) && (
+          {(loadingMore || (loading && ads.length > 0)) && (
             <div className="h-24 flex items-center justify-center text-xs text-zinc-500">Carregando…</div>
           )}
           {loadError && !(ads.length === 0 && niche === "todos") && (
@@ -547,19 +591,29 @@ export function FeedShell({ email, initialAds = [], initialHasMore = true }: Pro
             </div>
           )}
           {!loading && !loadError && ads.length === 0 && niche !== "todos" && (
-            <div className="min-h-full flex flex-col items-center justify-center gap-4 text-sm text-zinc-400 px-6 text-center py-12">
-              <div className="space-y-3">
-                <p className="font-medium text-zinc-200">Nenhum anúncio neste nicho</p>
+            <div className="min-h-[min(420px,65dvh)] flex flex-col items-center justify-center gap-4 text-sm text-zinc-400 px-6 text-center py-12">
+              <div className="space-y-3 max-w-sm">
+                <p className="font-medium text-zinc-200">Nenhum anúncio com este nicho exato</p>
                 <p className="text-sm text-zinc-500">
-                  Tente <strong className="text-zinc-300">todos</strong> ou outro segmento.
+                  Os anúncios minados costumam ficar com etiqueta <strong className="text-zinc-300">geral</strong> ou outra. Experimenta
+                  &quot;geral&quot; ou &quot;todos&quot;.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => setNiche("todos")}
-                  className="rounded-full bg-zinc-700 hover:bg-zinc-600 px-5 py-2 text-sm text-white transition"
-                >
-                  Ver todos
-                </button>
+                <div className="flex flex-col sm:flex-row gap-2 justify-center">
+                  <button
+                    type="button"
+                    onClick={() => setNiche("todos")}
+                    className="rounded-full bg-zinc-700 hover:bg-zinc-600 px-5 py-2 text-sm text-white transition"
+                  >
+                    Ver todos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNiche("geral")}
+                    className="rounded-full border border-zinc-600 hover:border-zinc-500 px-5 py-2 text-sm text-zinc-200 transition"
+                  >
+                    Nicho: geral
+                  </button>
+                </div>
               </div>
             </div>
           )}

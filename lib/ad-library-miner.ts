@@ -53,6 +53,8 @@ export type MinedAdLibraryRow = {
   mine_source: "ad_library_daily";
   /** Quantas buscas/keywords encontraram o mesmo id (proxy de “mais duplicado”). */
   appearance_count: number;
+  /** Host extraído do link de destino, quando existir. */
+  landing_domain?: string | null;
 };
 
 function daysSince(iso: string | null | undefined): number {
